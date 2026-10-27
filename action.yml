@@ -1,0 +1,101 @@
+name: 'Lines of Code History'
+description: 'Render an SVG chart of how the lines of code in this repository changed over time. Star-history, but for code.'
+author: 'Paul Goldschmidt'
+branding:
+  icon: 'trending-up'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'Where to write the SVG chart, relative to the workspace.'
+    required: false
+    default: 'loc-history.svg'
+  type:
+    description: '"net" (lines of code: additions minus deletions) or "added" (cumulative lines added).'
+    required: false
+    default: 'net'
+  theme:
+    description: '"light", "dark" or "auto" (follows the reader''s prefers-color-scheme).'
+    required: false
+    default: 'auto'
+  width:
+    description: 'Chart width in pixels.'
+    required: false
+    default: '800'
+  height:
+    description: 'Chart height in pixels.'
+    required: false
+    default: '480'
+  label:
+    description: 'Series label shown in the chart title.'
+    required: false
+    default: ${{ github.repository }}
+  exclude:
+    description: 'Comma-separated glob patterns of paths not to count, e.g. "package-lock.json,**/*.lock,vendor/**".'
+    required: false
+    default: ''
+  ref:
+    description: 'Git ref whose first-parent history is walked.'
+    required: false
+    default: 'HEAD'
+  data:
+    description: 'Optional path for a JSON dump of the weekly data next to the chart.'
+    required: false
+    default: ''
+
+outputs:
+  total_lines:
+    description: 'Lines of code at the last data point (additions minus deletions).'
+    value: ${{ steps.render.outputs.total_lines }}
+  svg_path:
+    description: 'Path of the rendered SVG.'
+    value: ${{ steps.render.outputs.svg_path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Build lines-of-code-history
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --no-audit --no-fund --ignore-scripts && npm run build
+
+    - name: Render chart
+      id: render
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_TYPE: ${{ inputs.type }}
+        INPUT_THEME: ${{ inputs.theme }}
+        INPUT_WIDTH: ${{ inputs.width }}
+        INPUT_HEIGHT: ${{ inputs.height }}
+        INPUT_LABEL: ${{ inputs.label }}
+        INPUT_EXCLUDE: ${{ inputs.exclude }}
+        INPUT_REF: ${{ inputs.ref }}
+        INPUT_DATA: ${{ inputs.data }}
+      run: |
+        set -euo pipefail
+        if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+          echo "::error::This checkout is shallow, so the history is incomplete. Use actions/checkout with 'fetch-depth: 0'."
+          exit 1
+        fi
+        data_file="${INPUT_DATA:-$RUNNER_TEMP/loc-history.json}"
+        args=("$PWD" --out "$INPUT_PATH" --type "$INPUT_TYPE" --theme "$INPUT_THEME" --width "$INPUT_WIDTH" --height "$INPUT_HEIGHT" --label "$INPUT_LABEL" --ref "$INPUT_REF" --data "$data_file")
+        IFS=',' read -ra patterns <<< "$INPUT_EXCLUDE"
+        for p in "${patterns[@]}"; do
+          p="${p#"${p%%[![:space:]]*}"}"; p="${p%"${p##*[![:space:]]}"}"
+          [ -n "$p" ] && args+=(--exclude "$p")
+        done
+        node "$ACTION_PATH/dist/src/cli.js" "${args[@]}"
+        total="$(node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(d.repos[0].summary.net)' "$data_file")"
+        echo "total_lines=$total" >> "$GITHUB_OUTPUT"
+        echo "svg_path=$INPUT_PATH" >> "$GITHUB_OUTPUT"
+        {
+          echo "### Lines of code: $total"
+          echo ""
+          echo "Chart written to \`$INPUT_PATH\`."
+        } >> "$GITHUB_STEP_SUMMARY"
