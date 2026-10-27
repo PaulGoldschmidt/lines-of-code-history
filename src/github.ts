@@ -21,6 +21,11 @@ export class GitHubError extends Error {
     this.name = 'GitHubError';
   }
 
+  /** True when the same request is expected to succeed shortly (worth an automatic retry). */
+  get transient(): boolean {
+    return this.code === 'pending' || this.code === 'busy';
+  }
+
   /** Status to use when relaying this error to our own API clients. */
   get httpStatus(): number {
     switch (this.code) {

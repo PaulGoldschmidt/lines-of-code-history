@@ -7,15 +7,19 @@ import { FileCacheStore } from './store.js';
 
 const env = process.env;
 const num = (name: string): number | undefined => (env[name] ? Number(env[name]) : undefined);
+const seconds = (name: string): number | undefined => {
+  const value = num(name);
+  return value === undefined ? undefined : value * 1000;
+};
 
-const port = Number(env.PORT ?? 3000);
+const port = num('PORT') ?? 3000;
 const ttlSeconds = num('LOC_CACHE_TTL_SECONDS') ?? 6 * 60 * 60;
 const store = env.LOC_CACHE_DIR ? new FileCacheStore(env.LOC_CACHE_DIR) : undefined;
 
 const loader = new RepoLoader({
   token: env.GITHUB_TOKEN,
   ttlMs: ttlSeconds * 1000,
-  staleMs: num('LOC_STALE_SECONDS') !== undefined ? num('LOC_STALE_SECONDS')! * 1000 : undefined,
+  staleMs: seconds('LOC_STALE_SECONDS'),
   maxEntries: num('LOC_CACHE_MAX_REPOS'),
   maxConcurrentFetches: num('LOC_MAX_CONCURRENT_FETCHES'),
   maxQueuedFetches: num('LOC_MAX_QUEUED_FETCHES'),
@@ -62,11 +66,8 @@ async function shutdown(signal: string): Promise<void> {
   server.close();
   const timer = setTimeout(() => process.exit(0), 5000);
   timer.unref();
-  try {
-    await loader.flush();
-  } finally {
-    process.exit(0);
-  }
+  await loader.flush();
+  process.exit(0);
 }
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));

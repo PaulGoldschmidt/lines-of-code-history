@@ -154,7 +154,7 @@ a{color:var(--accent)}
       chart.innerHTML = res[0];
       chartCard.classList.remove('loading');
       current = { data: res[1], svgUrl: svgUrl };
-      var pending = (res[1].errors || []).some(function (e) { return e.code === 'pending' || e.code === 'busy'; });
+      var pending = (res[1].errors || []).some(function (e) { return e.transient; });
       renderStatus(res[1], pending);
       renderEmbed(repos, svgUrl, jsonUrl);
       renderTable(res[1]);
@@ -174,7 +174,7 @@ a{color:var(--accent)}
       return '<b>' + esc(r.repo) + '</b>: ' + fmt(s.net) + ' lines (+' + fmt(s.additions) + ' / \\u2212' + fmt(s.deletions) + ' since ' + esc(s.firstWeek) + ')';
     });
     (data.errors || []).forEach(function (e) { parts.push('<b>' + esc(e.repo) + '</b>: ' + esc(e.message)); });
-    if (pending) parts.push('GitHub is computing the statistics (this can take a minute for large repositories). Retrying automatically\\u2026');
+    if (pending) parts.push('Retrying automatically\\u2026');
     status.innerHTML = parts.join('<br>') || 'No data.';
   }
 

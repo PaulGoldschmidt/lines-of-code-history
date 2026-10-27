@@ -29,9 +29,13 @@ export class Limiter {
     return this.queue.length;
   }
 
-  async run<T>(task: () => Promise<T>): Promise<T> {
+  /**
+   * Runs `task` once a slot is free. Without `wait`, a full queue refuses the task with
+   * `LimiterFullError`; with it, the task always waits (for self-throttled background work).
+   */
+  async run<T>(task: () => Promise<T>, { wait = false } = {}): Promise<T> {
     if (this.running >= this.maxConcurrent) {
-      if (this.queue.length >= this.maxQueued) throw new LimiterFullError();
+      if (!wait && this.queue.length >= this.maxQueued) throw new LimiterFullError();
       await new Promise<void>((resolve) => this.queue.push(resolve));
     }
     this.running++;

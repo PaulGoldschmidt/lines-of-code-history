@@ -107,7 +107,7 @@ test('GET /api/loc returns weekly data and summaries', async () => {
   assert.deepEqual(data.repos[0]!.weeks.map((w) => w.net), [900, 1050]);
   assert.deepEqual(data.repos[0]!.weeks.map((w) => w.added), [1000, 1200]);
   assert.equal(data.repos[0]!.weeks[0]!.week, '2024-01-07');
-  assert.deepEqual(data.errors, [{ repo: 'missing/repo', code: 'not_found', message: 'missing/repo was not found on GitHub (private repositories need a token)' }]);
+  assert.deepEqual(data.errors, [{ repo: 'missing/repo', code: 'not_found', message: 'missing/repo was not found on GitHub (private repositories need a token)', transient: false }]);
 });
 
 test('GET /api/loc propagates the error status when nothing loaded', async () => {

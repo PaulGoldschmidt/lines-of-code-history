@@ -1,13 +1,12 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { CacheEntry } from './cache.js';
+import { normalizeRows } from './series.js';
 import type { WeeklyRow } from './types.js';
 
-export interface StoredRepo {
+/** A cache entry together with its repository key, the unit of persistence. */
+export interface StoredRepo extends CacheEntry<WeeklyRow[]> {
   key: string;
-  rows: WeeklyRow[];
-  freshUntil: number;
-  expires: number;
 }
 
 export interface CacheStore {
@@ -25,8 +24,11 @@ interface FileFormat {
 export class FileCacheStore implements CacheStore {
   readonly file: string;
 
-  constructor(dir: string, name = 'repo-cache.json') {
-    this.file = path.join(dir, name);
+  constructor(
+    dir: string,
+    private readonly now: () => number = Date.now,
+  ) {
+    this.file = path.join(dir, 'repo-cache.json');
   }
 
   async load(): Promise<StoredRepo[]> {
@@ -39,23 +41,21 @@ export class FileCacheStore implements CacheStore {
     }
     const parsed = JSON.parse(text) as Partial<FileFormat>;
     if (parsed.version !== 1 || !Array.isArray(parsed.repos)) return [];
-    return parsed.repos.map((r) => ({
-      key: r.key,
-      freshUntil: r.freshUntil,
-      expires: r.expires,
-      rows: r.rows.map(([week, additions, deletions]) => ({ week, additions, deletions })),
-    }));
+    const t = this.now();
+    return parsed.repos
+      .filter((r) => r.expires > t)
+      .map((r) => ({ key: r.key, freshUntil: r.freshUntil, expires: r.expires, value: normalizeRows(r.rows) }));
   }
 
   async save(entries: StoredRepo[]): Promise<void> {
     const data: FileFormat = {
       version: 1,
-      savedAt: Date.now(),
+      savedAt: this.now(),
       repos: entries.map((e) => ({
         key: e.key,
         freshUntil: e.freshUntil,
         expires: e.expires,
-        rows: e.rows.map((r) => [r.week, r.additions, r.deletions] as [number, number, number]),
+        rows: e.value.map((r) => [r.week, r.additions, r.deletions] as [number, number, number]),
       })),
     };
     await mkdir(path.dirname(this.file), { recursive: true });
@@ -63,8 +63,4 @@ export class FileCacheStore implements CacheStore {
     await writeFile(tmp, JSON.stringify(data));
     await rename(tmp, this.file);
   }
-}
-
-export function toStored(key: string, entry: CacheEntry<WeeklyRow[]>): StoredRepo {
-  return { key, rows: entry.value, freshUntil: entry.freshUntil, expires: entry.expires };
 }

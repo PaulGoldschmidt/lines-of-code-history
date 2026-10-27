@@ -53,12 +53,12 @@ export function parseParams(url: URL): Params {
 
 interface LoadOutcome {
   ok: Array<{ repo: string; rows: WeeklyRow[] }>;
-  failed: Array<{ repo: string; code: string; message: string; status: number }>;
+  failed: Array<{ repo: string; code: string; message: string; status: number; transient: boolean }>;
 }
 
-function describeError(err: unknown): { code: string; message: string; status: number } {
-  if (err instanceof GitHubError) return { code: err.code, message: err.message, status: err.httpStatus };
-  return { code: 'internal', message: err instanceof Error ? err.message : String(err), status: 500 };
+function describeError(err: unknown): Omit<LoadOutcome['failed'][number], 'repo'> {
+  if (err instanceof GitHubError) return { code: err.code, message: err.message, status: err.httpStatus, transient: err.transient };
+  return { code: 'internal', message: err instanceof Error ? err.message : String(err), status: 500, transient: false };
 }
 
 async function loadAll(loader: RepoLoader, repos: string[]): Promise<LoadOutcome> {
@@ -113,7 +113,7 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
     for (const fail of failed) notes.push(`${fail.repo}: ${fail.message}`);
 
     if (ok.length === 0) {
-      const pending = failed.every((fail) => fail.code === 'pending' || fail.code === 'busy');
+      const pending = failed.every((fail) => fail.transient);
       const message = failed.map((fail) => fail.message).join(' ');
       return svgResponse(
         renderMessage('Lines of code history', pending ? `${message}. This image refreshes itself.` : message, frame),
@@ -166,7 +166,7 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
           })),
         };
       }),
-      errors: failed.map(({ repo, code, message }) => ({ repo, code, message })),
+      errors: failed.map(({ repo, code, message, transient }) => ({ repo, code, message, transient })),
     };
     const status = ok.length > 0 ? 200 : (failed[0]?.status ?? 500);
     return jsonResponse(body, status, status === 200 && failed.length === 0 ? okCache : 'no-store');

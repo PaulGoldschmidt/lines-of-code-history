@@ -1,7 +1,7 @@
 import { TtlCache } from './cache.js';
 import { GitHubError, fetchCodeFrequency, parseRepo, type GitHubClientOptions } from './github.js';
 import { Limiter, LimiterFullError } from './limiter.js';
-import { toStored, type CacheStore } from './store.js';
+import type { CacheStore } from './store.js';
 import type { WeeklyRow } from './types.js';
 
 export interface LoaderOptions extends GitHubClientOptions {
@@ -30,8 +30,10 @@ export interface LoaderOptions extends GitHubClientOptions {
   maxQueuedFetches?: number;
   /** Where to persist successful results across restarts. Default none. */
   store?: CacheStore;
-  /** Debounce for writing to the store after a change. Default 5 s. */
+  /** Quiet time after a change before the store is written. Default 5 s. */
   persistDelayMs?: number;
+  /** Least time between two writes, so a flood of new repositories collapses into one. Default 60 s. */
+  persistMinIntervalMs?: number;
   log?: (message: string) => void;
 }
 
@@ -57,19 +59,18 @@ export class RepoLoader {
   private readonly inflight = new Map<string, Promise<WeeklyRow[]>>();
   private readonly polling = new Set<string>();
   private readonly limiter: Limiter;
-  private readonly ttlMs: number;
-  private readonly staleMs: number;
-  private dirty = false;
-  private persistTimer: NodeJS.Timeout | undefined;
+  private readonly now: () => number;
+  /** Set while a write is scheduled; doubles as the "unsaved changes" flag. */
+  private persistTimer: ReturnType<typeof setTimeout> | undefined;
+  private lastPersist = 0;
   private persisting: Promise<void> = Promise.resolve();
 
   constructor(private readonly opts: LoaderOptions = {}) {
     const max = opts.maxEntries ?? 5000;
-    this.rows = new TtlCache(max, opts.now);
-    this.errors = new TtlCache(max, opts.now);
+    this.now = opts.now ?? Date.now;
+    this.rows = new TtlCache(max, this.now);
+    this.errors = new TtlCache(max, this.now);
     this.limiter = new Limiter(opts.maxConcurrentFetches ?? 8, opts.maxQueuedFetches ?? 200);
-    this.ttlMs = opts.ttlMs ?? 6 * HOUR;
-    this.staleMs = opts.staleMs ?? 7 * DAY;
   }
 
   /** True while the loader is polling GitHub for this repository in the background. */
@@ -103,24 +104,18 @@ export class RepoLoader {
   async restore(): Promise<number> {
     if (!this.opts.store) return 0;
     const entries = await this.opts.store.load();
-    let count = 0;
-    for (const e of entries) {
-      this.rows.setEntry(e.key, { value: e.rows, freshUntil: e.freshUntil, expires: e.expires });
-      count++;
-    }
-    return count;
+    for (const entry of entries) this.rows.setEntry(entry.key, entry);
+    return entries.length;
   }
 
-  /** Writes pending changes to the store now. Safe to call without a store. */
+  /** Writes unsaved changes to the store now. Never rejects; failures are logged. */
   async flush(): Promise<void> {
-    if (!this.opts.store || !this.dirty) return this.persisting;
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-      this.persistTimer = undefined;
-    }
-    this.dirty = false;
-    const snapshot = Array.from(this.rows.entries(), ([key, entry]) => toStored(key, entry));
     const store = this.opts.store;
+    if (!store || !this.persistTimer) return this.persisting;
+    clearTimeout(this.persistTimer);
+    this.persistTimer = undefined;
+    this.lastPersist = this.now();
+    const snapshot = Array.from(this.rows.entries(), ([key, entry]) => ({ key, ...entry }));
     this.persisting = this.persisting
       .then(() => store.save(snapshot))
       .catch((err: unknown) => this.opts.log?.(`cache persist failed: ${err instanceof Error ? err.message : String(err)}`));
@@ -148,9 +143,9 @@ export class RepoLoader {
     return pending;
   }
 
-  private async fetch(key: string, opts: GitHubClientOptions): Promise<WeeklyRow[]> {
+  private async fetch(key: string, opts: GitHubClientOptions, wait = false): Promise<WeeklyRow[]> {
     try {
-      return await this.limiter.run(() => fetchCodeFrequency(key, opts));
+      return await this.limiter.run(() => fetchCodeFrequency(key, opts), { wait });
     } catch (err) {
       if (err instanceof LimiterFullError) {
         throw new GitHubError('busy', `too many repositories are being fetched right now; try ${key} again in a moment`, 503);
@@ -164,9 +159,9 @@ export class RepoLoader {
   }
 
   private remember(key: string, rows: WeeklyRow[]): void {
-    this.rows.set(key, rows, this.ttlMs, this.staleMs);
+    this.rows.set(key, rows, this.opts.ttlMs ?? 6 * HOUR, this.opts.staleMs ?? 7 * DAY);
     this.errors.delete(key);
-    this.markDirty();
+    this.schedulePersist();
   }
 
   private rememberError(key: string, err: unknown): void {
@@ -175,6 +170,7 @@ export class RepoLoader {
     if (ttl > 0) this.errors.set(key, err, ttl);
   }
 
+  /** How long to remember a failure per repository. `busy` is global and costs nothing to retry, so it is not kept. */
   private errorTtl(err: GitHubError): number {
     switch (err.code) {
       case 'not_found':
@@ -187,21 +183,17 @@ export class RepoLoader {
         return PENDING_TTL;
       case 'upstream':
         return 30 * 1000;
-      case 'busy':
-        return 5 * 1000;
       default:
         return 0;
     }
   }
 
-  private markDirty(): void {
-    if (!this.opts.store) return;
-    this.dirty = true;
-    if (this.persistTimer) return;
-    this.persistTimer = setTimeout(() => {
-      this.persistTimer = undefined;
-      void this.flush();
-    }, this.opts.persistDelayMs ?? 5000);
+  private schedulePersist(): void {
+    if (!this.opts.store || this.persistTimer) return;
+    const delay = this.opts.persistDelayMs ?? 5000;
+    const minInterval = this.opts.persistMinIntervalMs ?? 60 * 1000;
+    const wait = Math.max(delay, this.lastPersist + minInterval - this.now());
+    this.persistTimer = setTimeout(() => void this.flush(), wait);
     this.persistTimer.unref?.();
   }
 
@@ -217,11 +209,11 @@ export class RepoLoader {
         for (let i = 0; i < attempts; i++) {
           await sleep(delay);
           try {
-            const rows = await this.fetch(key, { ...this.opts, retries: 0 });
+            // The poller is self-throttled, so it waits for a slot instead of being refused.
+            const rows = await this.fetch(key, { ...this.opts, retries: 0 }, true);
             this.remember(key, rows);
             return;
           } catch (err) {
-            if (err instanceof GitHubError && err.code === 'busy') continue;
             this.rememberError(key, err);
             if (!(err instanceof GitHubError) || err.code !== 'pending') return;
           }

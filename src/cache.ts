@@ -6,12 +6,7 @@ export interface CacheEntry<V> {
   expires: number;
 }
 
-export interface CacheHit<V> {
-  value: V;
-  fresh: boolean;
-  freshUntil: number;
-  expires: number;
-}
+export type CacheHit<V> = CacheEntry<V> & { fresh: boolean };
 
 /**
  * In-memory LRU cache with per-entry freshness and an optional stale window.
@@ -42,15 +37,15 @@ export class TtlCache<V> {
     }
     this.map.delete(key);
     this.map.set(key, entry);
-    return { value: entry.value, fresh: entry.freshUntil > t, freshUntil: entry.freshUntil, expires: entry.expires };
+    return { ...entry, fresh: entry.freshUntil > t };
   }
 
   /**
    * Stores a value that is fresh for `ttlMs` and may still be served as stale for a further `staleMs`.
    */
   set(key: string, value: V, ttlMs: number, staleMs = 0): void {
-    const t = this.now();
-    this.setEntry(key, { value, freshUntil: t + Math.max(0, ttlMs), expires: t + Math.max(0, ttlMs) + Math.max(0, staleMs) });
+    const freshUntil = this.now() + Math.max(0, ttlMs);
+    this.setEntry(key, { value, freshUntil, expires: freshUntil + Math.max(0, staleMs) });
   }
 
   /** Stores an entry with absolute timestamps, used when restoring a persisted cache. */
