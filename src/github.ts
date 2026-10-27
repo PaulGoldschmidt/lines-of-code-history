@@ -83,6 +83,7 @@ export interface GitHubClientOptions {
 
 export const DEFAULT_RETRIES = 5;
 export const DEFAULT_RETRY_DELAY_MS = 1500;
+export const DEFAULT_USER_AGENT = 'lines-of-code-history/0.1';
 
 /**
  * Loads the weekly additions/deletions history of a repository from GitHub's
@@ -102,7 +103,9 @@ export async function fetchCodeFrequency(repo: string, opts: GitHubClientOptions
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': opts.userAgent ?? 'lines-of-code-history (+https://github.com/PaulGoldschmidt/lines-of-code-history)',
+    // Keep this free of URLs: GitHub never finishes computing statistics for requests whose
+    // User-Agent contains one (it keeps answering 202 indefinitely), while plain agents get 200.
+    'User-Agent': opts.userAgent ?? DEFAULT_USER_AGENT,
   };
   if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
 

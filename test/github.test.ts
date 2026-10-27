@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GitHubError, fetchCodeFrequency, parseRepo } from '../src/github.js';
+import { DEFAULT_USER_AGENT, GitHubError, fetchCodeFrequency, parseRepo } from '../src/github.js';
 
 test('parseRepo accepts the usual spellings', () => {
   assert.equal(parseRepo('star-history/star-history'), 'star-history/star-history');
@@ -83,4 +83,17 @@ test('fetchCodeFrequency sends auth and API headers', async () => {
   assert.equal(seen?.get('authorization'), 'Bearer tok');
   assert.equal(seen?.get('x-github-api-version'), '2022-11-28');
   assert.ok(seen?.get('user-agent'));
+});
+
+test('the User-Agent sent to GitHub contains no URL', async () => {
+  // Regression: with a URL in the agent string GitHub answered 202 forever for uncomputed repositories.
+  let sent: Headers | undefined;
+  const f = (async (_input: unknown, init?: RequestInit) => {
+    sent = new Headers(init?.headers);
+    return new Response(JSON.stringify([[Date.UTC(2024, 0, 7) / 1000, 1, 0]]), { status: 200 });
+  }) as typeof fetch;
+  await fetchCodeFrequency('a/b', { fetch: f });
+  const ua = sent?.get('user-agent') ?? '';
+  assert.equal(ua, DEFAULT_USER_AGENT);
+  assert.ok(!/:\/\/|\(/.test(ua), ua);
 });
