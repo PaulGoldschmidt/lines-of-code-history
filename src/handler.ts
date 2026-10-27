@@ -116,7 +116,7 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
       const pending = failed.every((fail) => fail.code === 'pending');
       const message = failed.map((fail) => fail.message).join(' ');
       return svgResponse(
-        renderMessage('Lines of code history', pending ? `${message} This image refreshes itself.` : message, frame),
+        renderMessage('Lines of code history', pending ? `${message}. This image refreshes itself.` : message, frame),
         200,
         pending ? 'public, max-age=30' : 'no-store',
       );
