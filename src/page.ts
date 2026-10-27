@@ -3,7 +3,7 @@ import { SERIES_COLORS } from './chart.js';
 const REPO_URL = 'https://github.com/PaulGoldschmidt/lines-of-code-history';
 
 /** Repositories offered as one-click examples. All are within GitHub's 10,000-commit statistics limit. */
-const EXAMPLES = ['expressjs/express', 'pallets/flask', 'vitejs/vite', 'fastapi/fastapi', 'star-history/star-history'];
+const EXAMPLES = ['expressjs/express', 'SchmiedmayerLab/MyHeartCounts-Firebase', 'vitejs/vite', 'fastapi/fastapi', 'star-history/star-history'];
 
 /** The single-page web UI: pick repositories, preview the chart, share or embed it. */
 export function renderPage(): string {
