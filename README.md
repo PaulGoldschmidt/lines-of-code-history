@@ -64,7 +64,7 @@ The web UI at `/` builds these snippets for you, previews the chart with a hover
 | `repos` | Comma-separated `owner/name`, up to 8. GitHub URLs are accepted too. | required |
 | `type` | `net`: lines of code (additions minus deletions). `added`: cumulative lines added. | `net` |
 | `theme` | `light`, `dark`, or `auto` (follows `prefers-color-scheme`) | `light` |
-| `style` | `clean`, or `sketch` for a hand-drawn look with a handwriting font (embedded, so it works inside GitHub). | `clean` |
+| `style` | `clean`, or `sketch` for a hand-drawn look. Its handwriting text is drawn as glyph outlines, so it renders the same everywhere, including through GitHub's image proxy, which blocks fonts. | `clean` |
 | `axis` | `date` plots calendar time. `timeline` starts every repository at its first commit, so growth curves can be compared directly. | `date` |
 | `width`, `height` | Pixels. 320 to 2400 wide, 200 to 1600 high. | `800`, `480` |
 

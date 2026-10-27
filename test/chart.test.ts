@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { elapsedTicks, escapeXml, formatCompact, formatNumber, niceTicks, parseStyle, parseXAxis, renderChart, renderMessage, timeTicks } from '../src/chart.js';
+import { elapsedTicks, escapeXml, formatCompact, formatNumber, niceTicks, parseStyle, parseXAxis, renderChart, renderMessage, sketchTextWidth, timeTicks } from '../src/chart.js';
 
 const WEEK = 7 * 86400 * 1000;
 const start = Date.UTC(2023, 0, 1);
@@ -130,11 +130,13 @@ test('parseStyle and parseXAxis fall back to the defaults', () => {
   assert.equal(parseXAxis(undefined), 'date');
 });
 
-test('sketch style embeds the handwriting font and wobbles the marks, clean does not', () => {
+test('sketch style draws text from glyph outlines and wobbles the marks, clean does not', () => {
   const series = [{ label: 'a/b', points: linear(30, 10) }];
   const sketch = renderChart(series, { style: 'sketch' });
-  assert.match(sketch, /@font-face\{font-family:'Patrick Hand';src:url\(data:font\/woff2;base64,/);
-  assert.match(sketch, /font-family="&#39;Patrick Hand&#39;/);
+  assert.ok(!sketch.includes('@font-face'), 'no font: GitHub\'s image proxy blocks them, so text is drawn from outlines');
+  assert.match(sketch, /<defs><path id="lh-g76" d="M/, 'glyph outline for "L" is defined once');
+  assert.match(sketch, /<g class="lh-title" transform="translate\(16 33\) scale\(0\.01900 -0\.01900\)" aria-label="Lines of code"><use href="#lh-g76" x="0"\/>/);
+  assert.equal((sketch.match(/<text /g) ?? []).length, 0, 'every string is drawn from outlines');
   assert.match(sketch, /<filter id="lh-wobble"/);
   assert.match(sketch, /<g filter="url\(#lh-wobble\)"><line class="lh-axis"/);
   assert.match(sketch, /data-style="sketch"/);
@@ -144,7 +146,10 @@ test('sketch style embeds the handwriting font and wobbles the marks, clean does
   assert.ok(!clean.includes('<filter'));
   assert.match(clean, /data-style="clean"/);
   const message = renderMessage('t', 'm', { style: 'sketch' });
-  assert.match(message, /@font-face/);
+  assert.match(message, /<defs><path id="lh-g/);
+  assert.ok(!message.includes('<text '));
+  const odd = renderChart([{ label: 'ünïcode/漢字', points: linear(5, 1) }], { style: 'sketch', title: 'ünïcode/漢字 / Lines of code' });
+  assert.match(odd, /<text class="lh-title"[^>]*font-family="&#39;Segoe Print&#39;/, 'strings with glyphs outside the set fall back to a cursive text element');
 });
 
 test('timeline axis re-bases every series at its first point', () => {
@@ -160,4 +165,12 @@ test('timeline axis re-bases every series at its first point', () => {
   const starts = [...svg.matchAll(/class="lh-s\d lh-line"[^>]*d="M([\d.]+),/g)].map((m) => Number(m[1]));
   assert.equal(starts.length, 2);
   assert.equal(starts[0], starts[1]);
+});
+
+test('sketchTextWidth sums real glyph advances', () => {
+  assert.equal(sketchTextWidth('', 12), 0);
+  const a = sketchTextWidth('A', 1000);
+  assert.ok(a > 300 && a < 700, String(a));
+  assert.equal(sketchTextWidth('AA', 10), 2 * sketchTextWidth('A', 10));
+  assert.ok(sketchTextWidth('Lines of code', 12) < 13 * 12 * 0.58, 'narrower than the generic estimate');
 });

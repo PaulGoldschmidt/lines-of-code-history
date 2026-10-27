@@ -1,5 +1,5 @@
 import { WEEK_MS, isoDate } from './series.js';
-import { SKETCH_FONT_DATA_URI, SKETCH_FONT_FAMILY } from './sketch-font.js';
+import { SKETCH_GLYPHS, SKETCH_UNITS_PER_EM } from './sketch-font.js';
 import type { Point } from './types.js';
 
 export type Theme = 'light' | 'dark' | 'auto';
@@ -52,7 +52,7 @@ export const MIN_HEIGHT = 200;
 export const MAX_HEIGHT = 1600;
 
 const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-const SKETCH_FONT = `'${SKETCH_FONT_FAMILY}', 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive`;
+const SKETCH_FALLBACK_FONT = "'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive";
 const PAD = 16;
 const SKETCH_FILTER_ID = 'lh-wobble';
 
@@ -109,6 +109,58 @@ function trimZeros(s: string): string {
 /** Rough text width for layout; the renderer is a browser, so this only needs to be safe. */
 export function textWidth(s: string, fontSize: number): number {
   return s.length * fontSize * 0.58;
+}
+
+/** Exact width of sketch text, which is drawn from glyph outlines with known advances. */
+export function sketchTextWidth(s: string, fontSize: number): number {
+  let units = 0;
+  for (const ch of s) units += SKETCH_GLYPHS[ch]?.[0] ?? SKETCH_UNITS_PER_EM * 0.58;
+  return (units * fontSize) / SKETCH_UNITS_PER_EM;
+}
+
+function measure(s: string, fontSize: number, style: ChartStyle): number {
+  return style === 'sketch' ? sketchTextWidth(s, fontSize) : textWidth(s, fontSize);
+}
+
+/**
+ * Collects text for one SVG. Clean charts use <text>; sketch charts draw each string from glyph
+ * outlines (<use> per character over shared <defs>), because GitHub's image proxy forbids fonts.
+ */
+class TextLayer {
+  private readonly used = new Set<string>();
+  constructor(private readonly style: ChartStyle) {}
+
+  text(cls: string, x: number, y: number, str: string, size: number, anchor: 'start' | 'middle' | 'end' = 'start'): string {
+    const anchorAttr = anchor === 'start' ? '' : ` text-anchor="${anchor}"`;
+    if (this.style !== 'sketch') return `<text class="${cls}" x="${f(x)}" y="${f(y)}"${anchorAttr}>${escapeXml(str)}</text>`;
+    const chars = Array.from(str);
+    if (chars.some((ch) => !SKETCH_GLYPHS[ch])) {
+      // A character outside the embedded set: fall back to a real text element in a cursive face.
+      return `<text class="${cls}" x="${f(x)}" y="${f(y)}"${anchorAttr} font-family="${escapeXml(SKETCH_FALLBACK_FONT)}" font-size="${size}">${escapeXml(str)}</text>`;
+    }
+    const scale = size / SKETCH_UNITS_PER_EM;
+    const width = sketchTextWidth(str, size);
+    const x0 = anchor === 'end' ? x - width : anchor === 'middle' ? x - width / 2 : x;
+    let advance = 0;
+    const uses: string[] = [];
+    for (const ch of chars) {
+      const [adv, d] = SKETCH_GLYPHS[ch]!;
+      if (d) {
+        const id = `lh-g${ch.codePointAt(0)}`;
+        this.used.add(ch);
+        uses.push(`<use href="#${id}" x="${advance}"/>`);
+      }
+      advance += adv;
+    }
+    return `<g class="${cls}" transform="translate(${f(x0)} ${f(y)}) scale(${scale.toFixed(5)} ${(-scale).toFixed(5)})" aria-label="${escapeXml(str)}">${uses.join('')}</g>`;
+  }
+
+  /** Glyph outlines referenced so far, to be emitted once per SVG. */
+  defs(): string {
+    if (this.used.size === 0) return '';
+    const paths = [...this.used].map((ch) => `<path id="lh-g${ch.codePointAt(0)}" d="${SKETCH_GLYPHS[ch]![1]}"/>`);
+    return `<defs>${paths.join('')}</defs>`;
+  }
 }
 
 /** "Nice" axis ticks covering [min, max] with roughly `target` steps; `integer` keeps steps >= 1. */
@@ -242,11 +294,10 @@ const STATIC_RULES =
   'path.lh-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}' +
   'path.lh-area{stroke:none;opacity:.1}rect.lh-swatch{stroke:none}circle.lh-mark{stroke:none}';
 
-// Sketch: a handwriting face (embedded, since GitHub's image proxy allows no external loads),
-// slightly larger text to compensate for its lighter weight, a heavier wobbly line and a
-// dashed grid. The wobble itself is an SVG displacement filter applied to the marks group.
+// Sketch: text drawn from handwriting glyph outlines (see TextLayer), set slightly larger to
+// compensate for the lighter weight, a heavier wobbly line and a dashed grid. The wobble itself
+// is an SVG displacement filter applied to the marks group.
 const SKETCH_RULES =
-  `@font-face{font-family:'${SKETCH_FONT_FAMILY}';src:url(${SKETCH_FONT_DATA_URI}) format('woff2')}` +
   '.lh-title{font-size:19px;font-weight:400}.lh-sub,.lh-label{font-size:13.5px}' +
   '.lh-tick{font-size:12.5px}.lh-end{font-size:12.5px;font-weight:400}.lh-foot{font-size:11.5px}.lh-msg{font-size:15px}' +
   '.lh-grid,.lh-axis,.lh-leader{stroke-width:1;shape-rendering:auto;stroke-linecap:round}.lh-grid{stroke-dasharray:3 6}' +
@@ -273,9 +324,6 @@ function sketchFilter(W: number, H: number): string {
   );
 }
 
-function fontFor(style: ChartStyle): string {
-  return style === 'sketch' ? SKETCH_FONT : FONT;
-}
 
 function dimensions(opts: ChartOptions): { W: number; H: number } {
   return {
@@ -284,10 +332,15 @@ function dimensions(opts: ChartOptions): { W: number; H: number } {
   };
 }
 
-function truncate(s: string, maxWidth: number, fontSize: number): string {
-  if (textWidth(s, fontSize) <= maxWidth) return s;
-  const chars = Math.max(1, Math.floor(maxWidth / (fontSize * 0.58)) - 1);
-  return s.slice(0, chars) + '…';
+function truncate(s: string, maxWidth: number, fontSize: number, style: ChartStyle = 'clean'): string {
+  if (measure(s, fontSize, style) <= maxWidth) return s;
+  const chars = Array.from(s);
+  let n = Math.max(1, Math.floor(maxWidth / (fontSize * 0.58)) - 1);
+  if (style === 'sketch') {
+    n = chars.length;
+    while (n > 1 && measure(chars.slice(0, n).join('') + '…', fontSize, style) > maxWidth) n--;
+  }
+  return chars.slice(0, n).join('') + '…';
 }
 
 function f(n: number): string {
@@ -315,9 +368,11 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
 
   const compact = H < 300;
   // Font sizes used for layout estimates; the sketch face is set larger (see SKETCH_RULES).
-  const fs = style === 'sketch' ? { title: 19, label: 13.5, tick: 12.5 } : { title: 16, label: 12, tick: 11 };
-  const title = truncate(opts.title ?? 'Lines of code', W - 2 * PAD, fs.title);
-  const subtitle = compact ? undefined : opts.subtitle && truncate(opts.subtitle, W - 2 * PAD, fs.label);
+  const fs = style === 'sketch' ? { title: 19, label: 13.5, tick: 12.5, foot: 11.5 } : { title: 16, label: 12, tick: 11, foot: 10 };
+  const layer = new TextLayer(style);
+  const tw = (s: string, size: number): number => measure(s, size, style);
+  const title = truncate(opts.title ?? 'Lines of code', W - 2 * PAD, fs.title, style);
+  const subtitle = compact ? undefined : opts.subtitle && truncate(opts.subtitle, W - 2 * PAD, fs.label, style);
   const titleY = PAD + 17;
   const subtitleY = titleY + 18;
   let cursor = subtitle ? subtitleY + 8 : titleY + 8;
@@ -328,8 +383,8 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
     let lx = PAD;
     let ly = cursor + 12;
     series.forEach((s, index) => {
-      const label = truncate(s.label, W * 0.6, fs.label);
-      const w = 12 + 6 + textWidth(label, fs.label) + 18;
+      const label = truncate(s.label, W * 0.6, fs.label, style);
+      const w = 12 + 6 + tw(label, fs.label) + 18;
       if (lx > PAD && lx + w - 18 > W - PAD) {
         lx = PAD;
         ly += 18;
@@ -367,10 +422,10 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
   v0 = yTicks[0]!;
   v1 = yTicks[yTicks.length - 1]!;
 
-  const yLabelW = Math.max(...yTicks.map((v) => textWidth(formatCompact(v), fs.tick)));
+  const yLabelW = Math.max(...yTicks.map((v) => tw(formatCompact(v), fs.tick)));
   const plotLeft = PAD + yLabelW + 10;
   const endLabels = series.map((s) => formatNumber(s.points[s.points.length - 1]!.value));
-  const endLabelW = Math.max(...endLabels.map((l) => textWidth(l, fs.tick)));
+  const endLabelW = Math.max(...endLabels.map((l) => tw(l, fs.tick)));
   const plotRight = W - PAD - endLabelW - 12;
   const plotW = plotRight - plotLeft;
 
@@ -387,11 +442,11 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
 
   const parts: string[] = [];
   parts.push(`<rect class="lh-bg" width="${W}" height="${H}"/>`);
-  parts.push(`<text class="lh-title" x="${PAD}" y="${titleY}">${escapeXml(title)}</text>`);
-  if (subtitle) parts.push(`<text class="lh-sub" x="${PAD}" y="${subtitleY}">${escapeXml(subtitle)}</text>`);
+  parts.push(layer.text('lh-title', PAD, titleY, title, fs.title));
+  if (subtitle) parts.push(layer.text('lh-sub', PAD, subtitleY, subtitle, fs.label));
   for (const item of legend) {
     parts.push(`<rect class="lh-s${item.index} lh-swatch" x="${item.x}" y="${item.y - 10}" width="12" height="12" rx="3"/>`);
-    parts.push(`<text class="lh-label" x="${item.x + 18}" y="${item.y}">${escapeXml(item.label)}</text>`);
+    parts.push(layer.text('lh-label', item.x + 18, item.y, item.label, fs.label));
   }
 
   // Grid, axes and tick labels. Strokes go into one group so the sketch filter can wobble them together.
@@ -401,7 +456,7 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
     const yy = f(y(v));
     const cls = v === 0 ? 'lh-axis' : 'lh-grid';
     marks.push(`<line class="${cls}" x1="${f(plotLeft)}" x2="${f(plotRight)}" y1="${yy}" y2="${yy}"/>`);
-    text.push(`<text class="lh-tick" x="${f(plotLeft - 8)}" y="${f(y(v) + 4)}" text-anchor="end">${escapeXml(formatCompact(v))}</text>`);
+    text.push(layer.text('lh-tick', plotLeft - 8, y(v) + 4, formatCompact(v), fs.tick, 'end'));
   }
   if (!yTicks.includes(v0) || v0 !== 0) {
     marks.push(`<line class="lh-axis" x1="${f(plotLeft)}" x2="${f(plotRight)}" y1="${f(plotBottom)}" y2="${f(plotBottom)}"/>`);
@@ -409,7 +464,7 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
   for (const tick of xTicks) {
     const xx = f(x(tick.t));
     marks.push(`<line class="lh-axis" x1="${xx}" x2="${xx}" y1="${f(plotBottom)}" y2="${f(plotBottom + 4)}"/>`);
-    text.push(`<text class="lh-tick" x="${xx}" y="${f(plotBottom + 17)}" text-anchor="middle">${escapeXml(tick.label)}</text>`);
+    text.push(layer.text('lh-tick', x(tick.t), plotBottom + 17, tick.label, fs.tick, 'middle'));
   }
 
   // Marks: area wash for a single series, 2px lines, end dots with a surface ring.
@@ -451,7 +506,7 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
     marks.push(`<circle class="lh-s${e.index} lh-mark" cx="${f(e.cx)}" cy="${f(e.cy)}" r="4"/>`);
   }
   for (const e of ends) {
-    text.push(`<text class="lh-end" x="${f(plotRight + 10)}" y="${f(e.ly + 4)}">${escapeXml(e.label)}</text>`);
+    text.push(layer.text('lh-end', plotRight + 10, e.ly + 4, e.label, fs.tick));
   }
   if (style === 'sketch') {
     parts.push(sketchFilter(W, H), `<g filter="url(#${SKETCH_FILTER_ID})">${marks.join('')}</g>`);
@@ -461,10 +516,10 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
   parts.push(...text);
 
   // Footer.
-  parts.push(`<text class="lh-foot" x="${W - PAD}" y="${footY}" text-anchor="end">${escapeXml(footer)}</text>`);
+  parts.push(layer.text('lh-foot', W - PAD, footY, footer, fs.foot, 'end'));
   if (opts.note) {
-    const room = W - 2 * PAD - textWidth(footer, 10) - 16;
-    if (room > 60) parts.push(`<text class="lh-foot" x="${PAD}" y="${footY}">${escapeXml(truncate(opts.note, room, 10))}</text>`);
+    const room = W - 2 * PAD - tw(footer, fs.foot) - 16;
+    if (room > 60) parts.push(layer.text('lh-foot', PAD, footY, truncate(opts.note, room, fs.foot, style), fs.foot));
   }
 
   const description =
@@ -472,9 +527,9 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
     `${title}. ${series.map((s, i) => `${s.label}: ${endLabels[i]}`).join('; ')} as of ${isoDate(opts.now)}.`;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="lh-title" ` +
-    `font-family="${escapeXml(fontFor(style))}" data-plot="${f(plotLeft)},${f(plotTop)},${f(plotRight)},${f(plotBottom)}" ` +
+    `font-family="${FONT}" data-plot="${f(plotLeft)},${f(plotTop)},${f(plotRight)},${f(plotBottom)}" ` +
     `data-x="${t0},${t1}" data-y="${v0},${v1}" data-axis="${xAxis}" data-style="${style}">` +
-    `<title id="lh-title">${escapeXml(description)}</title>${styleBlock(theme, style)}${parts.join('')}</svg>`
+    `<title id="lh-title">${escapeXml(description)}</title>${styleBlock(theme, style)}${layer.defs()}${parts.join('')}</svg>`
   );
 }
 
@@ -498,17 +553,19 @@ export function renderMessage(title: string, message: string, opts: ChartOptions
   const { W, H } = dimensions(opts);
   const theme = opts.theme ?? 'light';
   const style = opts.style ?? 'clean';
-  const lines = wrapWords(message, Math.max(16, Math.floor((W - 2 * PAD) / (13 * 0.55))));
-  const lineHeight = 18;
+  const layer = new TextLayer(style);
+  const sizes = style === 'sketch' ? { title: 19, msg: 15, foot: 11.5 } : { title: 16, msg: 13, foot: 10 };
+  const lines = wrapWords(message, Math.max(16, Math.floor((W - 2 * PAD) / (sizes.msg * 0.55))));
+  const lineHeight = Math.round(sizes.msg * 1.4);
   const startY = H / 2 - ((lines.length - 1) * lineHeight) / 2 + 4;
-  const body = lines
-    .map((l, i) => `<text class="lh-msg" x="${W / 2}" y="${f(startY + i * lineHeight)}" text-anchor="middle">${escapeXml(l)}</text>`)
-    .join('');
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="lh-title" font-family="${escapeXml(fontFor(style))}">` +
-    `<title id="lh-title">${escapeXml(`${title}: ${message}`)}</title>${styleBlock(theme, style)}` +
+  const body = lines.map((l, i) => layer.text('lh-msg', W / 2, startY + i * lineHeight, l, sizes.msg, 'middle')).join('');
+  const content =
     `<rect class="lh-bg" width="${W}" height="${H}"/>` +
-    `<text class="lh-title" x="${PAD}" y="${PAD + 17}">${escapeXml(truncate(title, W - 2 * PAD, 16))}</text>${body}` +
-    `<text class="lh-foot" x="${W - PAD}" y="${H - PAD + 4}" text-anchor="end">${escapeXml(footerText(opts))}</text></svg>`
+    layer.text('lh-title', PAD, PAD + 17, truncate(title, W - 2 * PAD, sizes.title, style), sizes.title) +
+    body +
+    layer.text('lh-foot', W - PAD, H - PAD + 4, footerText(opts), sizes.foot, 'end');
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="lh-title" font-family="${FONT}">` +
+    `<title id="lh-title">${escapeXml(`${title}: ${message}`)}</title>${styleBlock(theme, style)}${layer.defs()}${content}</svg>`
   );
 }
