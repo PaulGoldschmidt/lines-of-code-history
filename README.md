@@ -152,7 +152,7 @@ The two sources agree on the final total but can differ along the way: GitHub co
 
 ```bash
 npm install
-npm test          # builds, then runs node --test against dist/test
+npm test          # builds, then runs node --test against dist/test/*.test.js
 npm run dev       # builds and starts the server
 ```
 
