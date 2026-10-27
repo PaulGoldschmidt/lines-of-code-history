@@ -147,7 +147,6 @@ async function main(argv: string[]): Promise<number> {
       xAxis,
       width: values.width ? Number(values.width) : undefined,
       height: values.height ? Number(values.height) : undefined,
-      footer: `lines-of-code-history / data: ${data.source === 'github' ? 'GitHub' : 'git'} / ${isoDate(now)}`,
       now,
     },
   );

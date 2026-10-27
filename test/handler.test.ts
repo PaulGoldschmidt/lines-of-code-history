@@ -57,7 +57,7 @@ test('GET /svg renders a chart with caching headers', async () => {
   const body = await res.text();
   assert.ok(body.includes('a/b / Lines of code'));
   assert.ok(body.includes('>1,050</text>'), 'final net value is labelled');
-  assert.ok(body.includes('data: GitHub'));
+  assert.match(body, /x \/ \d{4}-\d{2}-\d{2}</, 'footer names the host and the date, nothing else');
 
   await get(handler, '/svg?repos=a/b&theme=dark');
   assert.equal(calls.length, 1, 'second request is served from cache');

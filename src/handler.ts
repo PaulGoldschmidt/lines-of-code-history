@@ -134,7 +134,7 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
         ...frame,
         title,
         subtitle,
-        footer: `lines-of-code-history / data: GitHub / ${isoDate(now())}`,
+        footer: `${url.host} / ${isoDate(now())}`,
         note: notes.length > 0 ? notes.join(' / ') : undefined,
       },
     );
