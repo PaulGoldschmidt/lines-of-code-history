@@ -1,2 +1,172 @@
-# lines-of-code-history
-See how the lines of code in your repo changed over time
+# Lines of Code History
+
+See how the lines of code in a GitHub repository changed over time. It is [star-history](https://github.com/star-history/star-history), but for code: give it `owner/repo`, get an SVG chart you can embed in your README, and it keeps itself up to date.
+
+![Lines of code history of expressjs/express and star-history/star-history](docs/example.svg)
+
+Two ways to use it:
+
+- **Hosted chart, zero setup.** Run the small server (or point at someone's instance) and embed `/svg?repos=owner/repo` like a badge. Data comes from GitHub's statistics API.
+- **GitHub Action, no server.** A workflow in your repo renders the chart from the full git history and commits the SVG. Works for repositories of any size and lets you exclude lockfiles or vendored code.
+
+## Embed a chart in your README
+
+With an instance running at `https://loc.dotreflection.com`:
+
+```markdown
+[![Lines of Code History](https://loc.dotreflection.com/svg?repos=owner/repo)](https://loc.dotreflection.com/?repos=owner/repo)
+```
+
+Light and dark aware, switching with the reader's GitHub theme:
+
+```html
+<a href="https://loc.dotreflection.com/?repos=owner/repo">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://loc.dotreflection.com/svg?repos=owner/repo&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://loc.dotreflection.com/svg?repos=owner/repo&theme=light">
+    <img alt="Lines of Code History" src="https://loc.dotreflection.com/svg?repos=owner/repo&theme=light">
+  </picture>
+</a>
+```
+
+The web UI at `/` builds these snippets for you, previews the chart with a hover readout, and shows the weekly numbers as a table.
+
+### `/svg` parameters
+
+| Parameter | Values | Default |
+| --- | --- | --- |
+| `repos` | Comma-separated `owner/name`, up to 8. GitHub URLs are accepted too. | required |
+| `type` | `net`: lines of code (additions minus deletions). `added`: cumulative lines added. | `net` |
+| `theme` | `light`, `dark`, or `auto` (follows `prefers-color-scheme`) | `light` |
+| `width`, `height` | Pixels. 320 to 2400 wide, 200 to 1600 high. | `800`, `480` |
+
+`/api/loc?repos=owner/name` returns the same data as JSON: one row per week with additions, deletions, cumulative net and cumulative added lines, plus a summary per repository.
+
+Charts are cached for six hours (`Cache-Control` is set accordingly, so GitHub's image proxy caches them too).
+
+## Run your own instance
+
+Requires Node 18 or newer.
+
+```bash
+npm install
+npm run build
+GITHUB_TOKEN=ghp_yourtoken npm start      # http://localhost:3000
+```
+
+| Variable | Purpose |
+| --- | --- |
+| `GITHUB_TOKEN` | Optional but recommended. Without it GitHub allows 60 API requests per hour per IP; with it 5,000. A token with `repo` scope also makes private repositories work. |
+| `PORT` | Listen port, default `3000`. |
+| `LOC_CACHE_TTL_SECONDS` | How long results stay in memory and in `Cache-Control`, default `21600`. |
+| `LOC_STATS_RETRIES` | How often a single request re-polls GitHub while it computes statistics, default `5` (1.5 s apart). |
+
+With Docker:
+
+```bash
+docker build -t lines-of-code-history .
+docker run -p 3000:3000 -e GITHUB_TOKEN=ghp_yourtoken lines-of-code-history
+```
+
+The request handler is a plain `(Request) => Promise<Response>` function (`createHandler()` in `src/handler.ts`) with no Node-specific code, so it also runs on Cloudflare Workers, Deno, Bun or Vercel with a few lines of glue. Keep in mind that the cache lives in process memory.
+
+## The GitHub Action
+
+Renders the chart from the repository's own git history and leaves it in the working tree for you to commit. Embed it with a relative path, for example `![Lines of code](./loc-history.svg)`.
+
+```yaml
+# .github/workflows/loc-history.yml
+name: Lines of code history
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                       # the whole history is needed
+      - uses: PaulGoldschmidt/lines-of-code-history@main
+        id: loc
+        with:
+          path: loc-history.svg
+          theme: auto
+          exclude: package-lock.json,**/*.lock,vendor/**
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add loc-history.svg
+          git diff --cached --quiet || git commit -m "update lines of code chart (${{ steps.loc.outputs.total_lines }} lines)"
+          git push
+```
+
+The full example lives in [`examples/loc-history.yml`](examples/loc-history.yml).
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `path` | `loc-history.svg` | Where to write the chart. |
+| `type` | `net` | `net` or `added`, as above. |
+| `theme` | `auto` | `light`, `dark` or `auto`. |
+| `width`, `height` | `800`, `480` | Chart size in pixels. |
+| `label` | the repository name | Series label in the chart title. |
+| `exclude` | empty | Comma-separated globs of paths not to count. Patterns without a slash match file names anywhere (`*.lock`), patterns with a slash match from the repository root (`vendor/**`). |
+| `ref` | `HEAD` | Git ref whose first-parent history is walked. |
+| `data` | empty | Optional path for a JSON dump of the weekly numbers. |
+
+Outputs: `total_lines` (lines of code at the last data point) and `svg_path`. The step summary shows the total as well.
+
+## The CLI
+
+The same renderer as a command. It takes GitHub repositories, local clones, or a mix:
+
+```bash
+npm run cli -- expressjs/express --out express.svg
+npm run cli -- . --exclude package-lock.json --exclude 'vendor/**' --out loc-history.svg
+npm run cli -- expressjs/express koajs/koa fastify/fastify --theme dark --type added --out frameworks.svg
+npm run cli -- ~/src/my-repo --label me/my-repo --json > data.json
+```
+
+`npm link` puts it on your `PATH` as `loc-history`. Run it with `--help` for all options. `GITHUB_TOKEN` is picked up from the environment.
+
+## How the numbers are computed
+
+**Hosted charts** use GitHub's [`stats/code_frequency`](https://docs.github.com/rest/metrics/statistics#get-the-weekly-commit-activity) endpoint, which reports lines added and removed per week on the default branch. The running total of additions minus deletions is the number of lines in the repository that week. Keep in mind:
+
+- Every line of every text file counts, including lockfiles, vendored and generated code. Binary files do not count.
+- Weeks start on Sunday 00:00 UTC. The chart runs to the current week even when nothing changed.
+- GitHub computes these statistics lazily. The first request for a repository usually gets HTTP 202 and, for large repositories, the job can take a minute or more. The server polls for a few seconds, then returns a short-lived "still computing" image and keeps polling in the background, so a page reload shows the chart.
+- GitHub does not compute statistics for repositories with more than 10,000 commits (HTTP 422). Use the Action or the CLI with a clone for those.
+- Private repositories need a token that can read them.
+
+**The Action and the CLI's local mode** run `git log --first-parent --numstat` over the given ref. Following first parents means the running total always equals the lines in the checked-out tree (minus excludes), with a feature branch counted when it lands. Binary files are skipped, renames follow git's own detection, and `--exclude`/`--include` globs filter paths before counting. A shallow clone has incomplete history, so the Action refuses to run on one and the CLI warns.
+
+The two sources agree on the final total but can differ along the way: GitHub counts commits where they happened, the local mode where they were merged.
+
+## Development
+
+```bash
+npm install
+npm test          # builds, then runs node --test against dist/test
+npm run dev       # builds and starts the server
+```
+
+Layout:
+
+- `src/github.ts`: GitHub API client with 202/404/422/rate-limit handling.
+- `src/loader.ts`: cache, request de-duplication, background polling.
+- `src/series.ts`: weekly rows to cumulative series.
+- `src/chart.ts`: the SVG renderer (no dependencies).
+- `src/handler.ts`: the HTTP routes as a fetch-style handler.
+- `src/page.ts`: the web UI.
+- `src/git-local.ts` and `src/cli.ts`: local git history and the command line.
+- `action.yml`: the composite GitHub Action, which runs the CLI.
+
+## License
+
+[MIT](LICENSE)
