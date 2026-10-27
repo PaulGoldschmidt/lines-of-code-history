@@ -227,7 +227,7 @@ footer p{margin:0 0 8px}
     <div data-pane="md"><div class="snippet-head"><span>Paste into your README. Follows the reader's light or dark setting.</span><button class="ghost" type="button" data-copy="md">Copy</button></div><pre id="md"></pre></div>
     <div data-pane="html" hidden><div class="snippet-head"><span>Switches with the reader's GitHub theme</span><button class="ghost" type="button" data-copy="html">Copy</button></div><pre id="html"></pre></div>
     <div data-pane="url" hidden><div class="snippet-head"><span>Direct link to the SVG. Swap <code>theme=auto</code> for <code>light</code> or <code>dark</code> to pin it.</span><button class="ghost" type="button" data-copy="url">Copy</button></div><pre id="url"></pre></div>
-    <p class="small">Options: <code>type=net|added</code>, <code>axis=date|timeline</code>, <code>style=clean|sketch</code>, <code>theme=auto|light|dark</code>, <code>width</code> (320–2400), <code>height</code> (200–1600). The image is cached for six hours and refreshes itself after that.</p>
+    <p class="small">Options: <code>type=net|added</code>, <code>axis=date|timeline</code>, <code>style=clean|sketch</code>, <code>theme=auto|light|dark</code>, <code>width</code> (320 to 2400), <code>height</code> (200 to 1600). The image is cached for six hours and refreshes itself after that.</p>
     <div class="preview"><img id="previewImg" alt="Preview of the embedded chart"></div>
   </div>
 </dialog>
@@ -434,7 +434,7 @@ footer p{margin:0 0 8px}
       if (r) {
         var s = r.summary;
         var headline = type === 'added' ? fmt(s.additions) + ' lines added' : fmt(s.net) + ' lines';
-        return '<span>' + dot + '<b>' + esc(r.repo) + '</b> ' + headline + ' <span style="color:var(--muted)">(+' + fmt(s.additions) + ' / \\u2212' + fmt(s.deletions) + ' since ' + esc(s.firstWeek) + ')</span></span>';
+        return '<span>' + dot + '<b>' + esc(r.repo) + '</b> ' + headline + ' <span style="color:var(--muted)">(+' + fmt(s.additions) + ' / -' + fmt(s.deletions) + ' since ' + esc(s.firstWeek) + ')</span></span>';
       }
       if (e) return '<span>' + dot + '<b>' + esc(name) + '</b> <span style="color:var(--muted)">' + esc(e.message) + '</span></span>';
       return '';
@@ -509,7 +509,7 @@ footer p{margin:0 0 8px}
         var w = r.weeks.find(function (x) { return x.week === iso; });
         if (!w) return;
         var val = type === 'added' ? w.added : w.net;
-        rows.push('<div class="row"><span class="dot" style="background:' + colors[r.repo] + '"></span>' + esc(r.repo) + ' <b>' + fmt(val) + '</b> <span style="color:var(--muted)">(+' + fmt(w.additions) + ' / \\u2212' + fmt(w.deletions) + (timeline ? ', ' + iso : '') + ')</span></div>');
+        rows.push('<div class="row"><span class="dot" style="background:' + colors[r.repo] + '"></span>' + esc(r.repo) + ' <b>' + fmt(val) + '</b> <span style="color:var(--muted)">(+' + fmt(w.additions) + ' / -' + fmt(w.deletions) + (timeline ? ', ' + iso : '') + ')</span></div>');
       });
       if (!rows.length) { hide(); return; }
       var cx = plot[0] + ((wk - xr[0]) / (xr[1] - xr[0])) * (plot[2] - plot[0]);

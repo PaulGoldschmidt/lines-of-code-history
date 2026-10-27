@@ -60,7 +60,7 @@ export function fillWeeks(rows: WeeklyRow[], untilSeconds?: number): WeeklyRow[]
   return out;
 }
 
-/** Running total per week: net lines (additions − deletions) or cumulative additions. */
+/** Running total per week: net lines (additions minus deletions) or cumulative additions. */
 export function cumulative(rows: WeeklyRow[], type: SeriesType): Point[] {
   let total = 0;
   return rows.map((r) => {
@@ -94,7 +94,7 @@ export function describeChart(type: SeriesType, labels: string[], xAxis: 'date' 
   const when = xAxis === 'timeline' ? (labels.length === 1 ? 'since the first commit' : 'since each repository\'s first commit') : 'over time';
   const subtitle =
     type === 'net'
-      ? `Net lines in the repository ${when} (weekly additions − deletions, cumulative)`
+      ? `Net lines in the repository ${when} (weekly additions minus deletions, cumulative)`
       : `Cumulative lines added ${when} (weekly)`;
   if (labels.length === 1) return { title: `${labels[0]} / ${measure}`, subtitle };
   return { title: measure, subtitle };

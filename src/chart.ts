@@ -84,10 +84,10 @@ export function formatNumber(n: number): string {
   return Math.round(n).toLocaleString('en-US');
 }
 
-/** 1234567 → "1.23M", 2500 → "2.5k", −300 → "−300" */
+/** 1234567 becomes "1.23M", 2500 becomes "2.5k", -300 becomes "-300" */
 export function formatCompact(n: number): string {
   const abs = Math.abs(n);
-  const sign = n < 0 ? '−' : '';
+  const sign = n < 0 ? '-' : '';
   const units: Array<[number, string]> = [
     [1e9, 'B'],
     [1e6, 'M'],

@@ -13,7 +13,7 @@ test('formatCompact', () => {
   assert.equal(formatCompact(12500), '12.5k');
   assert.equal(formatCompact(125000), '125k');
   assert.equal(formatCompact(1234567), '1.23M');
-  assert.equal(formatCompact(-300), '−300');
+  assert.equal(formatCompact(-300), '-300');
   assert.equal(formatNumber(1234567.4), '1,234,567');
 });
 
