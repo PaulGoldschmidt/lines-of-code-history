@@ -12,11 +12,23 @@ See how the lines of code in a GitHub repository changed over time. It is [star-
 
 That is this repository's own chart, served live by [loc-history.com](https://loc-history.com). Several repositories on one chart, for example express and star-history:
 
-![Lines of code history of expressjs/express and star-history/star-history](docs/example.svg)
+<a href="https://loc-history.com/?repos=expressjs/express,star-history/star-history">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=expressjs/express,star-history/star-history&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://loc-history.com/svg?repos=expressjs/express,star-history/star-history&theme=light">
+    <img alt="Lines of code history of expressjs/express and star-history/star-history" src="https://loc-history.com/svg?repos=expressjs/express,star-history/star-history&theme=light">
+  </picture>
+</a>
 
 Prefer it hand-drawn, with every repository starting at its first commit? Add `style=sketch` and `axis=timeline`:
 
-![Sketch-style timeline of expressjs/express and pallets/flask](docs/example-sketch.svg)
+<a href="https://loc-history.com/?repos=expressjs/express,pallets/flask&style=sketch&axis=timeline">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=expressjs/express,pallets/flask&style=sketch&axis=timeline&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://loc-history.com/svg?repos=expressjs/express,pallets/flask&style=sketch&axis=timeline&theme=light">
+    <img alt="Sketch-style timeline of expressjs/express and pallets/flask" src="https://loc-history.com/svg?repos=expressjs/express,pallets/flask&style=sketch&axis=timeline&theme=light">
+  </picture>
+</a>
 
 Two ways to use it:
 
