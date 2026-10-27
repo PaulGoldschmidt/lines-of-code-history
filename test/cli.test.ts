@@ -29,7 +29,7 @@ test('cli renders an SVG for a local clone and writes JSON data', async () => {
   assert.match(stderr, /me\/repo: 2 lines/);
   const svg = readFileSync(out, 'utf8');
   assert.ok(svg.startsWith('<svg'));
-  assert.ok(svg.includes('me/repo / Lines of code'));
+  assert.ok(svg.includes('me/repo: Lines of code'));
   assert.match(svg, /lines-of-code-history \/ \d{4}-\d{2}-\d{2}</);
   assert.ok(!svg.includes('data:'));
   const json = JSON.parse(readFileSync(data, 'utf8')) as { repos: Array<{ repo: string; summary: { net: number } }> };

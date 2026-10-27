@@ -148,7 +148,7 @@ test('sketch style draws text from glyph outlines and wobbles the marks, clean d
   const message = renderMessage('t', 'm', { style: 'sketch' });
   assert.match(message, /<defs><path id="lh-g/);
   assert.ok(!message.includes('<text '));
-  const odd = renderChart([{ label: 'ünïcode/漢字', points: linear(5, 1) }], { style: 'sketch', title: 'ünïcode/漢字 / Lines of code' });
+  const odd = renderChart([{ label: 'ünïcode/漢字', points: linear(5, 1) }], { style: 'sketch', title: 'ünïcode/漢字: Lines of code' });
   assert.match(odd, /<text class="lh-title"[^>]*font-family="&#39;Segoe Print&#39;/, 'strings with glyphs outside the set fall back to a cursive text element');
 });
 

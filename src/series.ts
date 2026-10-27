@@ -96,7 +96,7 @@ export function describeChart(type: SeriesType, labels: string[], xAxis: 'date' 
     type === 'net'
       ? `Net lines in the repository ${when} (weekly additions minus deletions, cumulative)`
       : `Cumulative lines added ${when} (weekly)`;
-  if (labels.length === 1) return { title: `${labels[0]} / ${measure}`, subtitle };
+  if (labels.length === 1) return { title: `${labels[0]}: ${measure}`, subtitle };
   return { title: measure, subtitle };
 }
 
