@@ -55,7 +55,7 @@ test('GET /svg renders a chart with caching headers', async () => {
   assert.match(res.headers.get('content-type') ?? '', /image\/svg\+xml/);
   assert.match(res.headers.get('cache-control') ?? '', /max-age=21600/);
   const body = await res.text();
-  assert.ok(body.includes('a/b · Lines of code'));
+  assert.ok(body.includes('a/b / Lines of code'));
   assert.ok(body.includes('>1,050</text>'), 'final net value is labelled');
   assert.ok(body.includes('data: GitHub'));
 

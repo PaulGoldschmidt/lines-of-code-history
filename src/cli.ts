@@ -140,7 +140,7 @@ async function main(argv: string[]): Promise<number> {
       theme: parseTheme(values.theme),
       width: values.width ? Number(values.width) : undefined,
       height: values.height ? Number(values.height) : undefined,
-      footer: `lines-of-code-history · data: ${data.source === 'github' ? 'GitHub' : 'git'} · ${isoDate(now)}`,
+      footer: `lines-of-code-history / data: ${data.source === 'github' ? 'GitHub' : 'git'} / ${isoDate(now)}`,
       now,
     },
   );

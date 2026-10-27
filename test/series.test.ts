@@ -62,7 +62,7 @@ test('summarize reports totals and date range', () => {
 });
 
 test('describeChart names a single series in the title', () => {
-  assert.equal(describeChart('net', ['a/b']).title, 'a/b · Lines of code');
+  assert.equal(describeChart('net', ['a/b']).title, 'a/b / Lines of code');
   assert.equal(describeChart('added', ['a/b', 'c/d']).title, 'Lines of code added');
 });
 

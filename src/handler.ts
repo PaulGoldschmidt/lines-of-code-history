@@ -130,8 +130,8 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
         ...frame,
         title,
         subtitle,
-        footer: `lines-of-code-history · data: GitHub · ${isoDate(now())}`,
-        note: notes.length > 0 ? notes.join(' · ') : undefined,
+        footer: `lines-of-code-history / data: GitHub / ${isoDate(now())}`,
+        note: notes.length > 0 ? notes.join(' / ') : undefined,
       },
     );
     return svgResponse(chart, 200, failed.length > 0 ? 'public, max-age=300' : okCache);

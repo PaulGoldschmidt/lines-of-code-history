@@ -221,7 +221,7 @@ function f(n: number): string {
 }
 
 function footerText(opts: ChartOptions): string {
-  return opts.footer ?? `lines-of-code-history · ${isoDate(opts.now)}`;
+  return opts.footer ?? `lines-of-code-history / ${isoDate(opts.now)}`;
 }
 
 /** Renders a multi-series line chart as a standalone SVG document. */
