@@ -2,6 +2,7 @@
   "name": "lines-of-code-history",
   "version": "0.1.0",
   "description": "Star-history, but for lines of code: an embeddable SVG chart of how many lines of code a GitHub repo has over time",
+  "homepage": "https://loc-history.com",
   "type": "module",
   "license": "MIT",
   "repository": "github:PaulGoldschmidt/lines-of-code-history",

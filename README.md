@@ -2,15 +2,15 @@
 
 See how the lines of code in a GitHub repository changed over time. It is [star-history](https://github.com/star-history/star-history), but for code: give it `owner/repo`, get an SVG chart you can embed in your README, and it keeps itself up to date.
 
-<a href="https://loc.dotreflection.com/?repos=PaulGoldschmidt/lines-of-code-history">
+<a href="https://loc-history.com/?repos=PaulGoldschmidt/lines-of-code-history">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://loc.dotreflection.com/svg?repos=PaulGoldschmidt/lines-of-code-history&theme=dark">
-    <source media="(prefers-color-scheme: light)" srcset="https://loc.dotreflection.com/svg?repos=PaulGoldschmidt/lines-of-code-history&theme=light">
-    <img alt="Lines of code history of this repository" src="https://loc.dotreflection.com/svg?repos=PaulGoldschmidt/lines-of-code-history&theme=light">
+    <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=PaulGoldschmidt/lines-of-code-history&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://loc-history.com/svg?repos=PaulGoldschmidt/lines-of-code-history&theme=light">
+    <img alt="Lines of code history of this repository" src="https://loc-history.com/svg?repos=PaulGoldschmidt/lines-of-code-history&theme=light">
   </picture>
 </a>
 
-That is this repository's own chart, served live by [loc.dotreflection.com](https://loc.dotreflection.com). Several repositories on one chart, for example express and star-history:
+That is this repository's own chart, served live by [loc-history.com](https://loc-history.com). Several repositories on one chart, for example express and star-history:
 
 ![Lines of code history of expressjs/express and star-history/star-history](docs/example.svg)
 
@@ -21,20 +21,20 @@ Two ways to use it:
 
 ## Embed a chart in your README
 
-With an instance running at `https://loc.dotreflection.com`:
+With an instance running at `https://loc-history.com`:
 
 ```markdown
-[![Lines of Code History](https://loc.dotreflection.com/svg?repos=owner/repo)](https://loc.dotreflection.com/?repos=owner/repo)
+[![Lines of Code History](https://loc-history.com/svg?repos=owner/repo)](https://loc-history.com/?repos=owner/repo)
 ```
 
 Light and dark aware, switching with the reader's GitHub theme:
 
 ```html
-<a href="https://loc.dotreflection.com/?repos=owner/repo">
+<a href="https://loc-history.com/?repos=owner/repo">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://loc.dotreflection.com/svg?repos=owner/repo&theme=dark">
-    <source media="(prefers-color-scheme: light)" srcset="https://loc.dotreflection.com/svg?repos=owner/repo&theme=light">
-    <img alt="Lines of Code History" src="https://loc.dotreflection.com/svg?repos=owner/repo&theme=light">
+    <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=owner/repo&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://loc-history.com/svg?repos=owner/repo&theme=light">
+    <img alt="Lines of Code History" src="https://loc-history.com/svg?repos=owner/repo&theme=light">
   </picture>
 </a>
 ```
