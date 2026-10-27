@@ -7,7 +7,9 @@ RUN npx tsc -p tsconfig.json
 
 FROM node:22-alpine
 WORKDIR /app
-ENV NODE_ENV=production PORT=3000
+ENV NODE_ENV=production PORT=3000 LOC_CACHE_DIR=/data
+RUN mkdir -p /data && chown node:node /data
+VOLUME /data
 COPY --from=build /app/dist/src ./dist/src
 COPY package.json ./
 EXPOSE 3000

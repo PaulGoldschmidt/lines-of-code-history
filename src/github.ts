@@ -8,6 +8,7 @@ export type GitHubErrorCode =
   | 'pending'
   | 'rate_limited'
   | 'forbidden'
+  | 'busy'
   | 'upstream';
 
 export class GitHubError extends Error {
@@ -33,6 +34,7 @@ export class GitHubError extends Error {
         return 403;
       case 'pending':
       case 'rate_limited':
+      case 'busy':
         return 503;
       default:
         return 502;

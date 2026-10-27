@@ -154,7 +154,7 @@ a{color:var(--accent)}
       chart.innerHTML = res[0];
       chartCard.classList.remove('loading');
       current = { data: res[1], svgUrl: svgUrl };
-      var pending = (res[1].errors || []).some(function (e) { return e.code === 'pending'; });
+      var pending = (res[1].errors || []).some(function (e) { return e.code === 'pending' || e.code === 'busy'; });
       renderStatus(res[1], pending);
       renderEmbed(repos, svgUrl, jsonUrl);
       renderTable(res[1]);

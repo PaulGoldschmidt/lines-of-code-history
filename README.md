@@ -52,7 +52,7 @@ The web UI at `/` builds these snippets for you, previews the chart with a hover
 
 `/api/loc?repos=owner/name` returns the same data as JSON: one row per week with additions, deletions, cumulative net and cumulative added lines, plus a summary per repository.
 
-Charts are cached for six hours (`Cache-Control` is set accordingly, so GitHub's image proxy caches them too).
+Charts are cached for six hours (`Cache-Control` is set accordingly, so GitHub's image proxy caches them too). After that the last result is still served instantly while a fresh one loads in the background, and the cache is written to disk so a restart does not start cold.
 
 ## Run your own instance
 
@@ -68,17 +68,22 @@ GITHUB_TOKEN=ghp_yourtoken npm start      # http://localhost:3000
 | --- | --- |
 | `GITHUB_TOKEN` | Optional but recommended. Without it GitHub allows 60 API requests per hour per IP; with it 5,000. A token with `repo` scope also makes private repositories work. |
 | `PORT` | Listen port, default `3000`. |
-| `LOC_CACHE_TTL_SECONDS` | How long results stay in memory and in `Cache-Control`, default `21600`. |
+| `LOC_CACHE_TTL_SECONDS` | How long a result counts as fresh, in memory and in `Cache-Control`, default `21600`. |
+| `LOC_STALE_SECONDS` | How much longer a stale result is still served while it refreshes in the background, default `604800` (7 days). `0` disables stale serving. |
+| `LOC_CACHE_DIR` | Directory for the on-disk cache, so a restart does not start cold. Unset means memory only. The Docker image sets it to `/data`. |
+| `LOC_CACHE_MAX_REPOS` | Repositories kept in memory, least recently used evicted first, default `5000`. |
+| `LOC_MAX_CONCURRENT_FETCHES` | GitHub requests in flight at once, default `8`. Keeps the token clear of GitHub's secondary rate limits. |
+| `LOC_MAX_QUEUED_FETCHES` | Requests allowed to wait for a slot before new ones get a short-lived "busy" placeholder, default `200`. |
 | `LOC_STATS_RETRIES` | How often a single request re-polls GitHub while it computes statistics, default `5` (1.5 s apart). |
 
 With Docker:
 
 ```bash
 docker build -t lines-of-code-history .
-docker run -p 3000:3000 -e GITHUB_TOKEN=ghp_yourtoken lines-of-code-history
+docker run -p 3000:3000 -e GITHUB_TOKEN=ghp_yourtoken -v loc-cache:/data lines-of-code-history
 ```
 
-The request handler is a plain `(Request) => Promise<Response>` function (`createHandler()` in `src/handler.ts`) with no Node-specific code, so it also runs on Cloudflare Workers, Deno, Bun or Vercel with a few lines of glue. Keep in mind that the cache lives in process memory.
+The request handler is a plain `(Request) => Promise<Response>` function (`createHandler()` in `src/handler.ts`) with no Node-specific code, so it also runs on Cloudflare Workers, Deno, Bun or Vercel with a few lines of glue. Keep in mind that the cache lives in process memory unless `LOC_CACHE_DIR` points at a writable directory.
 
 ## The GitHub Action
 
@@ -169,7 +174,7 @@ npm run dev       # builds and starts the server
 Layout:
 
 - `src/github.ts`: GitHub API client with 202/404/422/rate-limit handling.
-- `src/loader.ts`: cache, request de-duplication, background polling.
+- `src/loader.ts`: LRU cache with stale-while-revalidate, request de-duplication, GitHub concurrency limit, background polling, persistence (`src/cache.ts`, `src/limiter.ts`, `src/store.ts`).
 - `src/series.ts`: weekly rows to cumulative series.
 - `src/chart.ts`: the SVG renderer (no dependencies).
 - `src/handler.ts`: the HTTP routes as a fetch-style handler.

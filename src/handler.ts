@@ -113,7 +113,7 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
     for (const fail of failed) notes.push(`${fail.repo}: ${fail.message}`);
 
     if (ok.length === 0) {
-      const pending = failed.every((fail) => fail.code === 'pending');
+      const pending = failed.every((fail) => fail.code === 'pending' || fail.code === 'busy');
       const message = failed.map((fail) => fail.message).join(' ');
       return svgResponse(
         renderMessage('Lines of code history', pending ? `${message}. This image refreshes itself.` : message, frame),
@@ -193,7 +193,7 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
         case '/api':
           return await api(url);
         case '/healthz':
-          return jsonResponse({ ok: true }, 200, 'no-store');
+          return jsonResponse({ ok: true, ...loader.stats() }, 200, 'no-store');
         case '/favicon.ico':
           return new Response(null, { status: 204 });
         default:

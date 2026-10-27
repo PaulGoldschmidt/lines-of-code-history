@@ -2,6 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GitHubError } from '../src/github.js';
 import { RepoLoader } from '../src/loader.js';
+import { FileCacheStore, type CacheStore } from '../src/store.js';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 const week = Date.UTC(2024, 0, 7) / 1000;
 const payload = [[week, 10, -1]];
@@ -84,4 +88,113 @@ test('requests during background polling do not hit GitHub', async () => {
   release();
   await settle();
   assert.equal((await loader.load('a/b')).length, 1 + Math.floor((Date.now() / 1000 - week) / (7 * 86400)));
+});
+
+test('loader serves stale results immediately and refreshes them in the background', async () => {
+  let t = 0;
+  let add = 10;
+  const calls: string[] = [];
+  const fetchFn = (async (input: unknown) => {
+    calls.push(String(input));
+    return new Response(JSON.stringify([[week, add, -1]]), { status: 200 });
+  }) as typeof fetch;
+  const loader = new RepoLoader({ fetch: fetchFn, sleep: async () => undefined, now: () => t, ttlMs: 100, staleMs: 1000 });
+  assert.equal((await loader.load('a/b'))[0]!.additions, 10);
+  t = 150;
+  add = 20;
+  assert.equal((await loader.load('a/b'))[0]!.additions, 10, 'stale value answered without waiting');
+  await settle();
+  assert.equal(calls.length, 2, 'one background refresh');
+  assert.equal((await loader.load('a/b'))[0]!.additions, 20, 'refreshed value is fresh again');
+  assert.equal(calls.length, 2);
+});
+
+test('loader keeps serving stale data when the refresh fails and does not hammer GitHub', async () => {
+  let t = 0;
+  const statuses = [200, 500, 500];
+  const calls: string[] = [];
+  const fetchFn = (async (input: unknown) => {
+    calls.push(String(input));
+    const status = statuses[Math.min(calls.length - 1, statuses.length - 1)]!;
+    return new Response(status === 200 ? JSON.stringify(payload) : '{}', { status });
+  }) as typeof fetch;
+  const loader = new RepoLoader({ fetch: fetchFn, sleep: async () => undefined, now: () => t, ttlMs: 100, staleMs: 1000, retries: 0 });
+  await loader.load('a/b');
+  t = 200;
+  assert.equal((await loader.load('a/b')).length, 1);
+  await settle();
+  assert.equal((await loader.load('a/b')).length, 1, 'still served while the upstream error is remembered');
+  await settle();
+  assert.equal(calls.length, 2, 'the remembered error throttles further refreshes');
+});
+
+test('loader limits concurrent GitHub requests and refuses when the queue is full', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let active = 0;
+  let peak = 0;
+  const fetchFn = (async () => {
+    active++;
+    peak = Math.max(peak, active);
+    await gate;
+    active--;
+    return new Response(JSON.stringify(payload), { status: 200 });
+  }) as typeof fetch;
+  const loader = new RepoLoader({ fetch: fetchFn, sleep: async () => undefined, maxConcurrentFetches: 2, maxQueuedFetches: 1 });
+  const a = loader.load('a/1');
+  const b = loader.load('a/2');
+  const c = loader.load('a/3');
+  await assert.rejects(loader.load('a/4'), (e: unknown) => e instanceof GitHubError && e.code === 'busy' && e.httpStatus === 503);
+  assert.deepEqual(loader.stats(), { repos: 0, polling: 0, fetching: 2, waiting: 1 });
+  release();
+  await Promise.all([a, b, c]);
+  assert.equal(peak, 2);
+  assert.equal(loader.stats().repos, 3);
+});
+
+test('loader persists results to a store and restores them with their freshness', async () => {
+  let t = 1_000_000;
+  const saved: Array<Parameters<CacheStore['save']>[0]> = [];
+  const store: CacheStore = {
+    load: async () => saved.at(-1) ?? [],
+    save: async (entries) => {
+      saved.push(entries);
+    },
+  };
+  const { fetch, calls } = sequence([200]);
+  const loader = new RepoLoader({ fetch, sleep: async () => undefined, now: () => t, ttlMs: 100, staleMs: 1000, store, persistDelayMs: 1 });
+  await loader.load('a/b');
+  await loader.flush();
+  assert.equal(saved.length, 1);
+  assert.deepEqual(saved[0]!.map((e) => [e.key, e.freshUntil, e.expires]), [['a/b', t + 100, t + 1100]]);
+
+  t += 150;
+  const restored = new RepoLoader({ fetch, sleep: async () => undefined, now: () => t, ttlMs: 100, staleMs: 1000, store });
+  assert.equal(await restored.restore(), 1);
+  assert.equal((await restored.load('a/b')).length, 1, 'served from the restored (now stale) entry');
+  await settle();
+  assert.equal(calls.length, 2, 'stale entry triggered exactly one refresh');
+
+  t += 5000;
+  const expired = new RepoLoader({ fetch, sleep: async () => undefined, now: () => t, store });
+  assert.equal(await expired.restore(), 1, 'entries past their stale window are counted but not kept');
+  assert.equal(expired.stats().repos, 0);
+});
+
+test('file store round-trips entries through disk atomically', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'loc-cache-'));
+  try {
+    const store = new FileCacheStore(dir);
+    assert.deepEqual(await store.load(), []);
+    const entries = [{ key: 'a/b', rows: [{ week, additions: 10, deletions: 1 }], freshUntil: 5, expires: 9 }];
+    await store.save(entries);
+    assert.deepEqual(await store.load(), entries);
+    assert.deepEqual(
+      (await readdir(dir)).filter((f) => f.endsWith('.tmp')),
+      [],
+      'no temp file left behind',
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
