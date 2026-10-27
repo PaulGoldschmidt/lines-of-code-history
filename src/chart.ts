@@ -1,8 +1,13 @@
 import { WEEK_MS, isoDate } from './series.js';
+import { SKETCH_FONT_DATA_URI, SKETCH_FONT_FAMILY } from './sketch-font.js';
 import type { Point } from './types.js';
 
 export type Theme = 'light' | 'dark' | 'auto';
 type Mode = 'light' | 'dark';
+/** `clean` is the default look; `sketch` is hand-drawn in the spirit of xkcd and star-history. */
+export type ChartStyle = 'clean' | 'sketch';
+/** `date` plots calendar time; `timeline` aligns every series at its first commit. */
+export type XAxis = 'date' | 'timeline';
 
 export interface ChartSeries {
   label: string;
@@ -14,6 +19,8 @@ export interface ChartOptions {
   height?: number;
   /** `auto` follows the viewer's `prefers-color-scheme`. */
   theme?: Theme;
+  style?: ChartStyle;
+  xAxis?: XAxis;
   title?: string;
   subtitle?: string;
   /** Small text, bottom right. */
@@ -45,7 +52,9 @@ export const MIN_HEIGHT = 200;
 export const MAX_HEIGHT = 1600;
 
 const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+const SKETCH_FONT = `'${SKETCH_FONT_FAMILY}', 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive`;
 const PAD = 16;
+const SKETCH_FILTER_ID = 'lh-wobble';
 
 export function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
@@ -54,6 +63,16 @@ export function clamp(n: number, lo: number, hi: number): number {
 export function parseTheme(value: string | null | undefined): Theme {
   const v = (value ?? '').toLowerCase();
   return v === 'dark' || v === 'auto' ? v : 'light';
+}
+
+export function parseStyle(value: string | null | undefined): ChartStyle {
+  const v = (value ?? '').toLowerCase();
+  return v === 'sketch' || v === 'xkcd' || v === 'hand' ? 'sketch' : 'clean';
+}
+
+export function parseXAxis(value: string | null | undefined): XAxis {
+  const v = (value ?? '').toLowerCase();
+  return v === 'timeline' || v === 'aligned' || v === 'relative' ? 'timeline' : 'date';
 }
 
 export function escapeXml(s: string): string {
@@ -175,6 +194,34 @@ export function timeTicks(t0: number, t1: number, availableWidth: number, fontSi
   ];
 }
 
+const DAY_MS = 86400 * 1000;
+const MONTH_MS = 30.436875 * DAY_MS;
+const YEAR_MS = 365.2425 * DAY_MS;
+const ELAPSED_CANDIDATES: Array<[number, string, number]> = [
+  [WEEK_MS, 'wk', 1], [WEEK_MS, 'wk', 2], [MONTH_MS, 'mo', 1], [MONTH_MS, 'mo', 2], [MONTH_MS, 'mo', 3], [MONTH_MS, 'mo', 6],
+  [YEAR_MS, 'yr', 1], [YEAR_MS, 'yr', 2], [YEAR_MS, 'yr', 5], [YEAR_MS, 'yr', 10], [YEAR_MS, 'yr', 20], [YEAR_MS, 'yr', 50],
+];
+
+/** Ticks for an elapsed-time axis starting at 0: the finest of weeks, months or years whose labels fit. */
+export function elapsedTicks(span: number, availableWidth: number, fontSize = 11): TimeTick[] {
+  for (const [unit, name, step] of ELAPSED_CANDIDATES) {
+    const ticks: TimeTick[] = [];
+    for (let n = 0; n * step * unit <= span + unit * step * 0.001; n++) {
+      const k = n * step;
+      ticks.push({ t: k * unit, label: k === 0 ? '0' : `${k} ${name}` });
+    }
+    const widest = Math.max(0, ...ticks.map((t) => textWidth(t.label, fontSize)));
+    if (ticks.length * (widest + 24) <= availableWidth) {
+      if (ticks.length >= 2) return ticks;
+      break;
+    }
+  }
+  return [
+    { t: 0, label: '0' },
+    { t: span, label: `${Math.max(1, Math.round(span / DAY_MS))} days` },
+  ];
+}
+
 function modeRules(mode: Mode): string {
   const k = INK[mode];
   const series = SERIES_COLORS[mode].map((c, i) => `.lh-s${i}{stroke:${c};fill:${c}}`).join('');
@@ -195,12 +242,39 @@ const STATIC_RULES =
   'path.lh-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}' +
   'path.lh-area{stroke:none;opacity:.1}rect.lh-swatch{stroke:none}circle.lh-mark{stroke:none}';
 
-function styleBlock(theme: Theme): string {
+// Sketch: a handwriting face (embedded, since GitHub's image proxy allows no external loads),
+// slightly larger text to compensate for its lighter weight, a heavier wobbly line and a
+// dashed grid. The wobble itself is an SVG displacement filter applied to the marks group.
+const SKETCH_RULES =
+  `@font-face{font-family:'${SKETCH_FONT_FAMILY}';src:url(${SKETCH_FONT_DATA_URI}) format('woff2')}` +
+  '.lh-title{font-size:19px;font-weight:400}.lh-sub,.lh-label{font-size:13.5px}' +
+  '.lh-tick{font-size:12.5px}.lh-end{font-size:12.5px;font-weight:400}.lh-foot{font-size:11.5px}.lh-msg{font-size:15px}' +
+  '.lh-grid,.lh-axis,.lh-leader{stroke-width:1;shape-rendering:auto;stroke-linecap:round}.lh-grid{stroke-dasharray:3 6}' +
+  '.lh-axis{stroke-width:1.5}' +
+  'path.lh-line{fill:none;stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round}' +
+  'path.lh-area{stroke:none;opacity:.12}rect.lh-swatch{stroke:none}circle.lh-mark{stroke:none}';
+
+function styleBlock(theme: Theme, style: ChartStyle = 'clean'): string {
+  const base = style === 'sketch' ? SKETCH_RULES : STATIC_RULES;
   const css =
     theme === 'auto'
-      ? `${STATIC_RULES}${modeRules('light')}@media (prefers-color-scheme:dark){${modeRules('dark')}}`
-      : `${STATIC_RULES}${modeRules(theme)}`;
+      ? `${base}${modeRules('light')}@media (prefers-color-scheme:dark){${modeRules('dark')}}`
+      : `${base}${modeRules(theme)}`;
   return `<style>${css}</style>`;
+}
+
+function sketchFilter(W: number, H: number): string {
+  // Low-frequency fractal noise displaces strokes by up to ~2px, like a hand that is steady but not a ruler.
+  return (
+    `<filter id="${SKETCH_FILTER_ID}" x="-2%" y="-2%" width="104%" height="104%" filterUnits="userSpaceOnUse" ` +
+    `color-interpolation-filters="sRGB" primitiveUnits="userSpaceOnUse">` +
+    `<feTurbulence type="fractalNoise" baseFrequency="${(0.9 / Math.sqrt(W)).toFixed(4)} ${(0.9 / Math.sqrt(H)).toFixed(4)}" numOctaves="2" seed="7" result="n"/>` +
+    `<feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G"/></filter>`
+  );
+}
+
+function fontFor(style: ChartStyle): string {
+  return style === 'sketch' ? SKETCH_FONT : FONT;
 }
 
 function dimensions(opts: ChartOptions): { W: number; H: number } {
@@ -228,12 +302,22 @@ function footerText(opts: ChartOptions): string {
 export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): string {
   const { W, H } = dimensions(opts);
   const theme = opts.theme ?? 'light';
-  const series = seriesIn.slice(0, MAX_SERIES).filter((s) => s.points.length > 0);
-  if (series.length === 0) return renderMessage(opts.title ?? 'Lines of code', 'No data to plot.', opts);
+  const style = opts.style ?? 'clean';
+  const xAxis = opts.xAxis ?? 'date';
+  const kept = seriesIn.slice(0, MAX_SERIES).filter((s) => s.points.length > 0);
+  if (kept.length === 0) return renderMessage(opts.title ?? 'Lines of code', 'No data to plot.', opts);
+  // Timeline mode re-bases every series at its own first point, so growth curves start together.
+  const starts = kept.map((s) => s.points[0]!.t);
+  const series: ChartSeries[] =
+    xAxis === 'timeline'
+      ? kept.map((s, i) => ({ label: s.label, points: s.points.map((p) => ({ t: p.t - starts[i]!, value: p.value })) }))
+      : kept;
 
   const compact = H < 300;
-  const title = truncate(opts.title ?? 'Lines of code', W - 2 * PAD, 16);
-  const subtitle = compact ? undefined : opts.subtitle && truncate(opts.subtitle, W - 2 * PAD, 12);
+  // Font sizes used for layout estimates; the sketch face is set larger (see SKETCH_RULES).
+  const fs = style === 'sketch' ? { title: 19, label: 13.5, tick: 12.5 } : { title: 16, label: 12, tick: 11 };
+  const title = truncate(opts.title ?? 'Lines of code', W - 2 * PAD, fs.title);
+  const subtitle = compact ? undefined : opts.subtitle && truncate(opts.subtitle, W - 2 * PAD, fs.label);
   const titleY = PAD + 17;
   const subtitleY = titleY + 18;
   let cursor = subtitle ? subtitleY + 8 : titleY + 8;
@@ -244,8 +328,8 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
     let lx = PAD;
     let ly = cursor + 12;
     series.forEach((s, index) => {
-      const label = truncate(s.label, W * 0.6, 12);
-      const w = 12 + 6 + textWidth(label, 12) + 18;
+      const label = truncate(s.label, W * 0.6, fs.label);
+      const w = 12 + 6 + textWidth(label, fs.label) + 18;
       if (lx > PAD && lx + w - 18 > W - PAD) {
         lx = PAD;
         ly += 18;
@@ -283,10 +367,10 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
   v0 = yTicks[0]!;
   v1 = yTicks[yTicks.length - 1]!;
 
-  const yLabelW = Math.max(...yTicks.map((v) => textWidth(formatCompact(v), 11)));
+  const yLabelW = Math.max(...yTicks.map((v) => textWidth(formatCompact(v), fs.tick)));
   const plotLeft = PAD + yLabelW + 10;
   const endLabels = series.map((s) => formatNumber(s.points[s.points.length - 1]!.value));
-  const endLabelW = Math.max(...endLabels.map((l) => textWidth(l, 11)));
+  const endLabelW = Math.max(...endLabels.map((l) => textWidth(l, fs.tick)));
   const plotRight = W - PAD - endLabelW - 12;
   const plotW = plotRight - plotLeft;
 
@@ -296,7 +380,8 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
     t0 -= WEEK_MS / 2;
     t1 += WEEK_MS / 2;
   }
-  const xTicks = timeTicks(t0, t1, plotW);
+  if (xAxis === 'timeline') t0 = 0;
+  const xTicks = xAxis === 'timeline' ? elapsedTicks(t1, plotW, fs.tick) : timeTicks(t0, t1, plotW, fs.tick);
   const x = (t: number): number => plotLeft + ((t - t0) / (t1 - t0)) * plotW;
   const y = (v: number): number => plotBottom - ((v - v0) / (v1 - v0)) * plotH;
 
@@ -309,20 +394,22 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
     parts.push(`<text class="lh-label" x="${item.x + 18}" y="${item.y}">${escapeXml(item.label)}</text>`);
   }
 
-  // Grid, axes and tick labels.
+  // Grid, axes and tick labels. Strokes go into one group so the sketch filter can wobble them together.
+  const marks: string[] = [];
+  const text: string[] = [];
   for (const v of yTicks) {
     const yy = f(y(v));
     const cls = v === 0 ? 'lh-axis' : 'lh-grid';
-    parts.push(`<line class="${cls}" x1="${f(plotLeft)}" x2="${f(plotRight)}" y1="${yy}" y2="${yy}"/>`);
-    parts.push(`<text class="lh-tick" x="${f(plotLeft - 8)}" y="${f(y(v) + 4)}" text-anchor="end">${escapeXml(formatCompact(v))}</text>`);
+    marks.push(`<line class="${cls}" x1="${f(plotLeft)}" x2="${f(plotRight)}" y1="${yy}" y2="${yy}"/>`);
+    text.push(`<text class="lh-tick" x="${f(plotLeft - 8)}" y="${f(y(v) + 4)}" text-anchor="end">${escapeXml(formatCompact(v))}</text>`);
   }
   if (!yTicks.includes(v0) || v0 !== 0) {
-    parts.push(`<line class="lh-axis" x1="${f(plotLeft)}" x2="${f(plotRight)}" y1="${f(plotBottom)}" y2="${f(plotBottom)}"/>`);
+    marks.push(`<line class="lh-axis" x1="${f(plotLeft)}" x2="${f(plotRight)}" y1="${f(plotBottom)}" y2="${f(plotBottom)}"/>`);
   }
   for (const tick of xTicks) {
     const xx = f(x(tick.t));
-    parts.push(`<line class="lh-axis" x1="${xx}" x2="${xx}" y1="${f(plotBottom)}" y2="${f(plotBottom + 4)}"/>`);
-    parts.push(`<text class="lh-tick" x="${xx}" y="${f(plotBottom + 17)}" text-anchor="middle">${escapeXml(tick.label)}</text>`);
+    marks.push(`<line class="lh-axis" x1="${xx}" x2="${xx}" y1="${f(plotBottom)}" y2="${f(plotBottom + 4)}"/>`);
+    text.push(`<text class="lh-tick" x="${xx}" y="${f(plotBottom + 17)}" text-anchor="middle">${escapeXml(tick.label)}</text>`);
   }
 
   // Marks: area wash for a single series, 2px lines, end dots with a surface ring.
@@ -332,9 +419,9 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
     if (series.length === 1) {
       const first = s.points[0]!;
       const last = s.points[s.points.length - 1]!;
-      parts.push(`<path class="lh-s${index} lh-area" d="${d}L${f(x(last.t))},${f(y(0))}L${f(x(first.t))},${f(y(0))}Z"/>`);
+      marks.push(`<path class="lh-s${index} lh-area" d="${d}L${f(x(last.t))},${f(y(0))}L${f(x(first.t))},${f(y(0))}Z"/>`);
     }
-    parts.push(`<path class="lh-s${index} lh-line" data-series="${escapeXml(s.label)}" d="${d}"/>`);
+    marks.push(`<path class="lh-s${index} lh-line" data-series="${escapeXml(s.label)}" data-start="${starts[index]}" d="${d}"/>`);
     const last = s.points[s.points.length - 1]!;
     ends.push({ index, cx: x(last.t), cy: y(last.value), label: endLabels[index]!, ly: y(last.value) });
   });
@@ -356,16 +443,22 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
   for (const e of ends) {
     const lx = plotRight + 10;
     if (Math.abs(e.ly - e.cy) > 1.5) {
-      parts.push(`<line class="lh-leader" x1="${f(e.cx + 7)}" y1="${f(e.cy)}" x2="${f(lx - 3)}" y2="${f(e.ly)}"/>`);
+      marks.push(`<line class="lh-leader" x1="${f(e.cx + 7)}" y1="${f(e.cy)}" x2="${f(lx - 3)}" y2="${f(e.ly)}"/>`);
     }
   }
   for (const e of ends) {
-    parts.push(`<circle class="lh-ring" cx="${f(e.cx)}" cy="${f(e.cy)}" r="6"/>`);
-    parts.push(`<circle class="lh-s${e.index} lh-mark" cx="${f(e.cx)}" cy="${f(e.cy)}" r="4"/>`);
+    marks.push(`<circle class="lh-ring" cx="${f(e.cx)}" cy="${f(e.cy)}" r="6"/>`);
+    marks.push(`<circle class="lh-s${e.index} lh-mark" cx="${f(e.cx)}" cy="${f(e.cy)}" r="4"/>`);
   }
   for (const e of ends) {
-    parts.push(`<text class="lh-end" x="${f(plotRight + 10)}" y="${f(e.ly + 4)}">${escapeXml(e.label)}</text>`);
+    text.push(`<text class="lh-end" x="${f(plotRight + 10)}" y="${f(e.ly + 4)}">${escapeXml(e.label)}</text>`);
   }
+  if (style === 'sketch') {
+    parts.push(sketchFilter(W, H), `<g filter="url(#${SKETCH_FILTER_ID})">${marks.join('')}</g>`);
+  } else {
+    parts.push(...marks);
+  }
+  parts.push(...text);
 
   // Footer.
   parts.push(`<text class="lh-foot" x="${W - PAD}" y="${footY}" text-anchor="end">${escapeXml(footer)}</text>`);
@@ -379,8 +472,9 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
     `${title}. ${series.map((s, i) => `${s.label}: ${endLabels[i]}`).join('; ')} as of ${isoDate(opts.now)}.`;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="lh-title" ` +
-    `font-family="${FONT}" data-plot="${f(plotLeft)},${f(plotTop)},${f(plotRight)},${f(plotBottom)}" data-x="${t0},${t1}" data-y="${v0},${v1}">` +
-    `<title id="lh-title">${escapeXml(description)}</title>${styleBlock(theme)}${parts.join('')}</svg>`
+    `font-family="${escapeXml(fontFor(style))}" data-plot="${f(plotLeft)},${f(plotTop)},${f(plotRight)},${f(plotBottom)}" ` +
+    `data-x="${t0},${t1}" data-y="${v0},${v1}" data-axis="${xAxis}" data-style="${style}">` +
+    `<title id="lh-title">${escapeXml(description)}</title>${styleBlock(theme, style)}${parts.join('')}</svg>`
   );
 }
 
@@ -403,6 +497,7 @@ function wrapWords(text: string, maxChars: number): string[] {
 export function renderMessage(title: string, message: string, opts: ChartOptions = {}): string {
   const { W, H } = dimensions(opts);
   const theme = opts.theme ?? 'light';
+  const style = opts.style ?? 'clean';
   const lines = wrapWords(message, Math.max(16, Math.floor((W - 2 * PAD) / (13 * 0.55))));
   const lineHeight = 18;
   const startY = H / 2 - ((lines.length - 1) * lineHeight) / 2 + 4;
@@ -410,8 +505,8 @@ export function renderMessage(title: string, message: string, opts: ChartOptions
     .map((l, i) => `<text class="lh-msg" x="${W / 2}" y="${f(startY + i * lineHeight)}" text-anchor="middle">${escapeXml(l)}</text>`)
     .join('');
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="lh-title" font-family="${FONT}">` +
-    `<title id="lh-title">${escapeXml(`${title}: ${message}`)}</title>${styleBlock(theme)}` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="lh-title" font-family="${escapeXml(fontFor(style))}">` +
+    `<title id="lh-title">${escapeXml(`${title}: ${message}`)}</title>${styleBlock(theme, style)}` +
     `<rect class="lh-bg" width="${W}" height="${H}"/>` +
     `<text class="lh-title" x="${PAD}" y="${PAD + 17}">${escapeXml(truncate(title, W - 2 * PAD, 16))}</text>${body}` +
     `<text class="lh-foot" x="${W - PAD}" y="${H - PAD + 4}" text-anchor="end">${escapeXml(footerText(opts))}</text></svg>`

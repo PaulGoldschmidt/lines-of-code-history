@@ -180,6 +180,14 @@ footer p{margin:0 0 8px}
         <button type="button" data-type="net" aria-pressed="true">Net lines</button>
         <button type="button" data-type="added" aria-pressed="false">Lines added</button>
       </div>
+      <div class="seg" role="group" aria-label="X axis">
+        <button type="button" data-axis="date" aria-pressed="true" title="Calendar dates">Date</button>
+        <button type="button" data-axis="timeline" aria-pressed="false" title="Time since each repository's first commit">Timeline</button>
+      </div>
+      <div class="seg" role="group" aria-label="Style">
+        <button type="button" data-style="clean" aria-pressed="true">Clean</button>
+        <button type="button" data-style="sketch" aria-pressed="false" title="Hand-drawn look">Sketch</button>
+      </div>
       <div class="actions">
         <button type="button" id="embedBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>Embed</button>
         <button type="button" id="shareBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Share</button>
@@ -203,7 +211,7 @@ footer p{margin:0 0 8px}
 
   <section class="features" id="about">
     <div class="feature"><h3>Live, zero setup</h3><p>Charts come straight from GitHub's statistics and refresh themselves. Paste one line into a README and forget about it.</p></div>
-    <div class="feature"><h3>Light and dark</h3><p>The HTML embed follows the reader's GitHub theme. Pick a fixed theme with <code>theme=light</code> or <code>theme=dark</code>.</p></div>
+    <div class="feature"><h3>Your look, your axis</h3><p>Clean or hand-drawn sketch style, calendar dates or a timeline that starts every repository at its first commit, light or dark.</p></div>
     <div class="feature"><h3>Any size of repository</h3><p>GitHub's API stops at 10,000 commits. The <a href="${REPO_URL}#the-github-action">GitHub Action</a> and <a href="${REPO_URL}#the-cli">CLI</a> render from a clone instead and can exclude lockfiles or vendored code.</p></div>
   </section>
 </main>
@@ -219,7 +227,7 @@ footer p{margin:0 0 8px}
     <div data-pane="md"><div class="snippet-head"><span>Paste into your README. Follows the reader's light or dark setting.</span><button class="ghost" type="button" data-copy="md">Copy</button></div><pre id="md"></pre></div>
     <div data-pane="html" hidden><div class="snippet-head"><span>Switches with the reader's GitHub theme</span><button class="ghost" type="button" data-copy="html">Copy</button></div><pre id="html"></pre></div>
     <div data-pane="url" hidden><div class="snippet-head"><span>Direct link to the SVG. Swap <code>theme=auto</code> for <code>light</code> or <code>dark</code> to pin it.</span><button class="ghost" type="button" data-copy="url">Copy</button></div><pre id="url"></pre></div>
-    <p class="small">Options: <code>type=net|added</code>, <code>theme=auto|light|dark</code>, <code>width</code> (320–2400), <code>height</code> (200–1600). The image is cached for six hours and refreshes itself after that.</p>
+    <p class="small">Options: <code>type=net|added</code>, <code>axis=date|timeline</code>, <code>style=clean|sketch</code>, <code>theme=auto|light|dark</code>, <code>width</code> (320–2400), <code>height</code> (200–1600). The image is cached for six hours and refreshes itself after that.</p>
     <div class="preview"><img id="previewImg" alt="Preview of the embedded chart"></div>
   </div>
 </dialog>
@@ -227,7 +235,7 @@ footer p{margin:0 0 8px}
 
 <footer class="wrap">
   <p>Numbers come from GitHub's weekly code-frequency statistics: every line in every text file counts, lockfiles and vendored code included. Weeks start on Sunday, and the first request for a repository can take GitHub a minute or two to compute.</p>
-  <p><a href="${REPO_URL}">Source on GitHub</a> · <a href="${REPO_URL}#run-your-own-instance">Run your own instance</a> · <a href="${REPO_URL}#how-the-numbers-are-computed">How the numbers are computed</a> · Made by <a href="https://paul-goldschmidt.de">Paul Goldschmidt</a></p>
+  <p><a href="${REPO_URL}">Source on GitHub</a> / <a href="${REPO_URL}#run-your-own-instance">Run your own instance</a> / <a href="${REPO_URL}#how-the-numbers-are-computed">How the numbers are computed</a> / Made by <a href="https://paul-goldschmidt.de">Paul Goldschmidt</a></p>
 </footer>
 <script>
 (function () {
@@ -239,6 +247,8 @@ footer p{margin:0 0 8px}
   var dlg = $('embedDlg'), toast = $('toast'), themeBtn = $('themeBtn'), sampleCard = $('sampleCard');
   var repos = [];
   var type = 'net';
+  var axis = 'date';
+  var style = 'clean';
   var current = null; // { data: json, svg: text, svgUrl: string, jsonUrl: string }
   var drawId = 0;
   var toastTimer;
@@ -357,21 +367,32 @@ footer p{margin:0 0 8px}
       draw();
     });
   });
-  document.querySelectorAll('.seg [data-type]').forEach(function (b) {
+  function setSeg(attr, value) {
+    document.querySelectorAll('.seg [data-' + attr + ']').forEach(function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-' + attr) === value)); });
+  }
+  document.querySelectorAll('.seg [data-type],.seg [data-axis],.seg [data-style]').forEach(function (b) {
     b.addEventListener('click', function () {
-      type = b.getAttribute('data-type');
-      document.querySelectorAll('.seg [data-type]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      if (b.hasAttribute('data-type')) { type = b.getAttribute('data-type'); setSeg('type', type); }
+      if (b.hasAttribute('data-axis')) { axis = b.getAttribute('data-axis'); setSeg('axis', axis); }
+      if (b.hasAttribute('data-style')) { style = b.getAttribute('data-style'); setSeg('style', style); }
       if (repos.length) draw();
     });
   });
 
   /* drawing */
-  function query() { return new URLSearchParams({ repos: repos.join(','), type: type, theme: mode() }); }
+  function options() {
+    var o = { repos: repos.join(',') };
+    if (type !== 'net') o.type = type;
+    if (axis !== 'date') o.axis = axis;
+    if (style !== 'clean') o.style = style;
+    return o;
+  }
+  function query() { var o = options(); o.theme = mode(); return new URLSearchParams(o); }
   function draw() {
     var q = query();
     history.replaceState(null, '', '?' + q.toString());
     var svgUrl = location.origin + '/svg?' + q.toString();
-    var jsonUrl = location.origin + '/api/loc?' + new URLSearchParams({ repos: repos.join(','), type: type }).toString();
+    var jsonUrl = location.origin + '/api/loc?' + new URLSearchParams({ repos: repos.join(',') }).toString();
     var id = ++drawId;
     chartCard.hidden = false; sampleCard.hidden = true;
     chartCard.classList.add('loading');
@@ -424,7 +445,7 @@ footer p{margin:0 0 8px}
   }
 
   function renderEmbed(svgUrl) {
-    var pageUrl = location.origin + '/?' + new URLSearchParams({ repos: repos.join(','), type: type }).toString();
+    var pageUrl = location.origin + '/?' + new URLSearchParams(options()).toString();
     var auto = svgUrl.replace(/theme=[a-z]+/, 'theme=auto');
     var light = svgUrl.replace(/theme=[a-z]+/, 'theme=light');
     var dark = svgUrl.replace(/theme=[a-z]+/, 'theme=dark');
@@ -452,9 +473,10 @@ footer p{margin:0 0 8px}
     var svg = chart.querySelector('svg');
     if (!svg || !svg.dataset.plot) return;
     var plot = svg.dataset.plot.split(',').map(Number), xr = svg.dataset.x.split(',').map(Number);
+    var timeline = svg.dataset.axis === 'timeline';
     var vb = svg.viewBox.baseVal;
-    var colors = {};
-    [].slice.call(svg.querySelectorAll('path.lh-line')).forEach(function (p) { colors[p.dataset.series] = getComputedStyle(p).stroke; });
+    var colors = {}, starts = {};
+    [].slice.call(svg.querySelectorAll('path.lh-line')).forEach(function (p) { colors[p.dataset.series] = getComputedStyle(p).stroke; starts[p.dataset.series] = Number(p.dataset.start); });
     var cross = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     cross.setAttribute('y1', plot[1]); cross.setAttribute('y2', plot[3]);
     cross.setAttribute('stroke', 'currentColor'); cross.setAttribute('stroke-opacity', '0.35'); cross.setAttribute('stroke-width', '1');
@@ -468,22 +490,31 @@ footer p{margin:0 0 8px}
       var px = (e.clientX - rect.left) * (vb.width / rect.width);
       if (px < plot[0] || px > plot[2]) { hide(); return; }
       var t = xr[0] + ((px - plot[0]) / (plot[2] - plot[0])) * (xr[1] - xr[0]);
-      var wk = Math.round(t / week) * week;
-      var d = new Date(wk);
-      var day = (d.getUTCDay() + 3) % 7; // weeks start on Sunday; align to the nearest Sunday 00:00 UTC
-      wk = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - d.getUTCDay() + (day > 3 ? 7 : 0));
-      var iso = new Date(wk).toISOString().slice(0, 10);
+      var wk, head;
+      if (timeline) {
+        wk = Math.round(t / week) * week; // elapsed, in whole weeks
+        var weeks = Math.round(wk / week);
+        head = weeks < 1 ? 'First week' : weeks < 9 ? 'Week ' + weeks : weeks < 104 ? (weeks / 4.348).toFixed(1).replace(/\\.0$/, '') + ' months in' : (weeks / 52.18).toFixed(1).replace(/\\.0$/, '') + ' years in';
+      } else {
+        wk = Math.round(t / week) * week;
+        var d = new Date(wk);
+        var day = (d.getUTCDay() + 3) % 7; // weeks start on Sunday; align to the nearest Sunday 00:00 UTC
+        wk = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - d.getUTCDay() + (day > 3 ? 7 : 0));
+        head = 'Week of ' + new Date(wk).toISOString().slice(0, 10);
+      }
       var rows = [];
       (current.data.repos || []).forEach(function (r) {
+        var at = timeline ? starts[r.repo] + wk : wk;
+        var iso = new Date(at).toISOString().slice(0, 10);
         var w = r.weeks.find(function (x) { return x.week === iso; });
         if (!w) return;
         var val = type === 'added' ? w.added : w.net;
-        rows.push('<div class="row"><span class="dot" style="background:' + colors[r.repo] + '"></span>' + esc(r.repo) + ' <b>' + fmt(val) + '</b> <span style="color:var(--muted)">(+' + fmt(w.additions) + ' / \\u2212' + fmt(w.deletions) + ')</span></div>');
+        rows.push('<div class="row"><span class="dot" style="background:' + colors[r.repo] + '"></span>' + esc(r.repo) + ' <b>' + fmt(val) + '</b> <span style="color:var(--muted)">(+' + fmt(w.additions) + ' / \\u2212' + fmt(w.deletions) + (timeline ? ', ' + iso : '') + ')</span></div>');
       });
       if (!rows.length) { hide(); return; }
       var cx = plot[0] + ((wk - xr[0]) / (xr[1] - xr[0])) * (plot[2] - plot[0]);
       cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
-      tip.innerHTML = '<div class="d">Week of ' + iso + '</div>' + rows.join('');
+      tip.innerHTML = '<div class="d">' + head + '</div>' + rows.join('');
       tip.hidden = false;
       var box = stage.getBoundingClientRect();
       var left = e.clientX - box.left + 14, top = e.clientY - box.top + 14;
@@ -552,10 +583,9 @@ footer p{margin:0 0 8px}
     var hash = location.hash.replace(/^#/, '');
     var fromUrl = p.get('repos') || p.get('repo') || (hash && hash.indexOf('/') > -1 ? hash.split('&')[0] : '');
     repos = parseRepos(fromUrl).slice(0, MAX_REPOS);
-    if (p.get('type') === 'added') {
-      type = 'added';
-      document.querySelectorAll('.seg [data-type]').forEach(function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-type') === 'added')); });
-    }
+    if (p.get('type') === 'added') { type = 'added'; setSeg('type', type); }
+    if (p.get('axis') === 'timeline') { axis = 'timeline'; setSeg('axis', axis); }
+    if (p.get('style') === 'sketch') { style = 'sketch'; setSeg('style', style); }
     renderChips();
     if (repos.length) draw();
   }

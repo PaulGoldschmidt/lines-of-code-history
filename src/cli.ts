@@ -3,7 +3,7 @@ import { statSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { renderChart, parseTheme, formatNumber } from './chart.js';
+import { renderChart, parseTheme, parseStyle, parseXAxis, formatNumber } from './chart.js';
 import { isShallow, localCodeFrequency } from './git-local.js';
 import { fetchCodeFrequency, parseRepo } from './github.js';
 import { cumulative, describeChart, isoDate, parseSeriesType, summarize } from './series.js';
@@ -18,6 +18,8 @@ path to a local git clone (walked with git log; no commit limit, supports exclud
 Options:
   --type <net|added>      net lines of code (default) or cumulative lines added
   --theme <light|dark|auto>
+  --style <clean|sketch>  clean (default) or a hand-drawn look
+  --axis <date|timeline>  calendar dates (default) or time since each repository's first commit
   --width <px> --height <px>
   --out <file.svg>        write the SVG here instead of stdout
   --json                  print the weekly data as JSON instead of an SVG
@@ -54,6 +56,8 @@ async function main(argv: string[]): Promise<number> {
     options: {
       type: { type: 'string', default: 'net' },
       theme: { type: 'string', default: 'light' },
+      style: { type: 'string', default: 'clean' },
+      axis: { type: 'string', default: 'date' },
       width: { type: 'string' },
       height: { type: 'string' },
       out: { type: 'string' },
@@ -131,13 +135,16 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const { title, subtitle } = describeChart(type, results.map((r) => r.label));
+  const xAxis = parseXAxis(values.axis);
+  const { title, subtitle } = describeChart(type, results.map((r) => r.label), xAxis);
   const svg = renderChart(
     results.map((r) => ({ label: r.label, points: cumulative(r.rows, type) })),
     {
       title: values.title ?? title,
       subtitle,
       theme: parseTheme(values.theme),
+      style: parseStyle(values.style),
+      xAxis,
       width: values.width ? Number(values.width) : undefined,
       height: values.height ? Number(values.height) : undefined,
       footer: `lines-of-code-history / data: ${data.source === 'github' ? 'GitHub' : 'git'} / ${isoDate(now)}`,

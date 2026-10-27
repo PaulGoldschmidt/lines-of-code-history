@@ -1,4 +1,4 @@
-import { MAX_SERIES, parseTheme, renderChart, renderMessage, type Theme, MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT, DEFAULT_WIDTH, DEFAULT_HEIGHT, clamp } from './chart.js';
+import { MAX_SERIES, parseTheme, parseStyle, parseXAxis, renderChart, renderMessage, type Theme, type ChartStyle, type XAxis, MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT, DEFAULT_WIDTH, DEFAULT_HEIGHT, clamp } from './chart.js';
 import { GitHubError, parseRepo } from './github.js';
 import { RepoLoader, type LoaderOptions } from './loader.js';
 import { renderPage } from './page.js';
@@ -21,6 +21,8 @@ interface Params {
   invalid: string[];
   type: SeriesType;
   theme: Theme;
+  style: ChartStyle;
+  xAxis: XAxis;
   width: number;
   height: number;
 }
@@ -46,6 +48,8 @@ export function parseParams(url: URL): Params {
     invalid,
     type: parseSeriesType(url.searchParams.get('type')),
     theme: parseTheme(url.searchParams.get('theme')),
+    style: parseStyle(url.searchParams.get('style')),
+    xAxis: parseXAxis(url.searchParams.get('axis') ?? url.searchParams.get('xaxis')),
     width: num('width', DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH),
     height: num('height', DEFAULT_HEIGHT, MIN_HEIGHT, MAX_HEIGHT),
   };
@@ -97,12 +101,12 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
 
   async function svg(url: URL): Promise<Response> {
     const params = parseParams(url);
-    const frame = { width: params.width, height: params.height, theme: params.theme, now: now() };
+    const frame = { width: params.width, height: params.height, theme: params.theme, style: params.style, xAxis: params.xAxis, now: now() };
     if (params.repos.length === 0) {
       const hint =
         params.invalid.length > 0
           ? `Not a GitHub repository: ${params.invalid.join(', ')}. Use owner/name.`
-          : 'Add ?repos=owner/name to the URL (comma-separate several). Options: type=net|added, theme=light|dark|auto, width, height.';
+          : 'Add ?repos=owner/name to the URL (comma-separate several). Options: type=net|added, theme=light|dark|auto, style=clean|sketch, axis=date|timeline, width, height.';
       return svgResponse(renderMessage('Lines of code history', hint, frame), 400, 'no-store');
     }
     const repos = params.repos.slice(0, MAX_SERIES);
@@ -123,7 +127,7 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
     }
 
     const labels = ok.map((o) => o.repo);
-    const { title, subtitle } = describeChart(params.type, labels);
+    const { title, subtitle } = describeChart(params.type, labels, params.xAxis);
     const chart = renderChart(
       ok.map((o) => ({ label: o.repo, points: cumulative(o.rows, params.type) })),
       {

@@ -89,12 +89,13 @@ export function summarize(rows: WeeklyRow[]): RepoSummary {
 }
 
 /** Chart title and subtitle for a measure and the labels being plotted. */
-export function describeChart(type: SeriesType, labels: string[]): { title: string; subtitle: string } {
+export function describeChart(type: SeriesType, labels: string[], xAxis: 'date' | 'timeline' = 'date'): { title: string; subtitle: string } {
   const measure = type === 'net' ? 'Lines of code' : 'Lines of code added';
+  const when = xAxis === 'timeline' ? (labels.length === 1 ? 'since the first commit' : 'since each repository\'s first commit') : 'over time';
   const subtitle =
     type === 'net'
-      ? 'Net lines in the repository over time (weekly additions − deletions, cumulative)'
-      : 'Cumulative lines added over time (weekly)';
+      ? `Net lines in the repository ${when} (weekly additions − deletions, cumulative)`
+      : `Cumulative lines added ${when} (weekly)`;
   if (labels.length === 1) return { title: `${labels[0]} / ${measure}`, subtitle };
   return { title: measure, subtitle };
 }

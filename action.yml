@@ -18,6 +18,14 @@ inputs:
     description: '"light", "dark" or "auto" (follows the reader''s prefers-color-scheme).'
     required: false
     default: 'auto'
+  style:
+    description: '"clean" or "sketch" (hand-drawn look).'
+    required: false
+    default: 'clean'
+  axis:
+    description: '"date" (calendar) or "timeline" (time since the first commit).'
+    required: false
+    default: 'date'
   width:
     description: 'Chart width in pixels.'
     required: false
@@ -71,6 +79,8 @@ runs:
         INPUT_PATH: ${{ inputs.path }}
         INPUT_TYPE: ${{ inputs.type }}
         INPUT_THEME: ${{ inputs.theme }}
+        INPUT_STYLE: ${{ inputs.style }}
+        INPUT_AXIS: ${{ inputs.axis }}
         INPUT_WIDTH: ${{ inputs.width }}
         INPUT_HEIGHT: ${{ inputs.height }}
         INPUT_LABEL: ${{ inputs.label }}
@@ -84,7 +94,7 @@ runs:
           exit 1
         fi
         data_file="${INPUT_DATA:-$RUNNER_TEMP/loc-history.json}"
-        args=("$PWD" --out "$INPUT_PATH" --type "$INPUT_TYPE" --theme "$INPUT_THEME" --width "$INPUT_WIDTH" --height "$INPUT_HEIGHT" --label "$INPUT_LABEL" --ref "$INPUT_REF" --data "$data_file")
+        args=("$PWD" --out "$INPUT_PATH" --type "$INPUT_TYPE" --theme "$INPUT_THEME" --style "$INPUT_STYLE" --axis "$INPUT_AXIS" --width "$INPUT_WIDTH" --height "$INPUT_HEIGHT" --label "$INPUT_LABEL" --ref "$INPUT_REF" --data "$data_file")
         IFS=',' read -ra patterns <<< "$INPUT_EXCLUDE"
         for p in "${patterns[@]}"; do
           p="${p#"${p%%[![:space:]]*}"}"; p="${p%"${p##*[![:space:]]}"}"

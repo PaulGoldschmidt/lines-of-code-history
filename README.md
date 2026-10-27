@@ -14,6 +14,10 @@ That is this repository's own chart, served live by [loc-history.com](https://lo
 
 ![Lines of code history of expressjs/express and star-history/star-history](docs/example.svg)
 
+Prefer it hand-drawn, with every repository starting at its first commit? Add `style=sketch` and `axis=timeline`:
+
+![Sketch-style timeline of expressjs/express and pallets/flask](docs/example-sketch.svg)
+
 Two ways to use it:
 
 - **Hosted chart, zero setup.** Run the small server (or point at someone's instance) and embed `/svg?repos=owner/repo` like a badge. Data comes from GitHub's statistics API.
@@ -48,6 +52,8 @@ The web UI at `/` builds these snippets for you, previews the chart with a hover
 | `repos` | Comma-separated `owner/name`, up to 8. GitHub URLs are accepted too. | required |
 | `type` | `net`: lines of code (additions minus deletions). `added`: cumulative lines added. | `net` |
 | `theme` | `light`, `dark`, or `auto` (follows `prefers-color-scheme`) | `light` |
+| `style` | `clean`, or `sketch` for a hand-drawn look with a handwriting font (embedded, so it works inside GitHub). | `clean` |
+| `axis` | `date` plots calendar time. `timeline` starts every repository at its first commit, so growth curves can be compared directly. | `date` |
 | `width`, `height` | Pixels. 320 to 2400 wide, 200 to 1600 high. | `800`, `480` |
 
 `/api/loc?repos=owner/name` returns the same data as JSON: one row per week with additions, deletions, cumulative net and cumulative added lines, plus a summary per repository.

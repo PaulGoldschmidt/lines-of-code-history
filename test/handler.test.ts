@@ -122,3 +122,15 @@ test('unknown routes and methods', async () => {
   assert.equal((await handler(new Request('http://localhost/svg', { method: 'POST' }))).status, 405);
   assert.equal((await get(handler, '/healthz')).status, 200);
 });
+
+test('parseParams understands style and axis and ignores unknown values', () => {
+  const p = parseParams(new URL('http://x/svg?repos=a/b&style=sketch&axis=timeline'));
+  assert.equal(p.style, 'sketch');
+  assert.equal(p.xAxis, 'timeline');
+  const q = parseParams(new URL('http://x/svg?repos=a/b&style=neon&xaxis=timeline'));
+  assert.equal(q.style, 'clean');
+  assert.equal(q.xAxis, 'timeline');
+  const d = parseParams(new URL('http://x/svg?repos=a/b'));
+  assert.equal(d.style, 'clean');
+  assert.equal(d.xAxis, 'date');
+});
