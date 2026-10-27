@@ -1,0 +1,29 @@
+{
+  "name": "lines-of-code-history",
+  "version": "0.1.0",
+  "description": "Star-history, but for lines of code: an embeddable SVG chart of how many lines of code a GitHub repo has over time",
+  "type": "module",
+  "license": "MIT",
+  "repository": "github:PaulGoldschmidt/lines-of-code-history",
+  "main": "dist/src/handler.js",
+  "bin": {
+    "loc-history": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "dev": "npm run build && node dist/src/server.js",
+    "test": "npm run build && node --test dist/test/",
+    "cli": "node dist/src/cli.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.6.0"
+  }
+}
