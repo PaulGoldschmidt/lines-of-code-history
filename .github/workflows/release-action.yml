@@ -1,0 +1,29 @@
+name: Release action
+
+# Keeps the moving `v1` tag pointing at a commit that includes the compiled dist/, so
+# `uses: PaulGoldschmidt/lines-of-code-history@v1` runs without building TypeScript first.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  v1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci && npm test
+      - name: Publish the prebuilt action to the v1 tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/src
+          git commit -qm "prebuilt action for $(git rev-parse --short HEAD)"
+          git tag -f v1
+          git push -f origin v1

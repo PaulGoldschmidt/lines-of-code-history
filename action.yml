@@ -66,10 +66,12 @@ runs:
       with:
         node-version: '20'
 
-    - name: Build lines-of-code-history
+    - name: Build lines-of-code-history (skipped on the prebuilt v1 tag)
       shell: bash
       working-directory: ${{ github.action_path }}
-      run: npm ci --no-audit --no-fund --ignore-scripts && npm run build
+      run: |
+        if [ -f dist/src/cli.js ]; then echo "using prebuilt dist"; exit 0; fi
+        npm ci --no-audit --no-fund --ignore-scripts && npm run build
 
     - name: Render chart
       id: render

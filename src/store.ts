@@ -1,5 +1,8 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { mkdir, readFile, rename } from 'node:fs/promises';
+import { once } from 'node:events';
 import path from 'node:path';
+import { setImmediate as breathe } from 'node:timers/promises';
 import type { CacheEntry } from './cache.js';
 import { normalizeRows } from './series.js';
 import type { WeeklyRow } from './types.js';
@@ -14,13 +17,23 @@ export interface CacheStore {
   save(entries: StoredRepo[]): Promise<void>;
 }
 
-interface FileFormat {
-  version: 1;
+const FORMAT = 2;
+interface Header {
+  version: number;
   savedAt: number;
-  repos: Array<{ key: string; freshUntil: number; expires: number; rows: Array<[number, number, number]> }>;
+}
+interface Line {
+  key: string;
+  freshUntil: number;
+  expires: number;
+  rows: Array<[number, number, number]>;
 }
 
-/** Persists the repository cache as one JSON file, written atomically via a temp file and rename. */
+/**
+ * Persists the repository cache as JSON lines (a header, then one repository per line),
+ * written to a temp file and renamed into place. Writing one line at a time and yielding
+ * between batches keeps a large snapshot from stalling request handling.
+ */
 export class FileCacheStore implements CacheStore {
   readonly file: string;
 
@@ -28,7 +41,7 @@ export class FileCacheStore implements CacheStore {
     dir: string,
     private readonly now: () => number = Date.now,
   ) {
-    this.file = path.join(dir, 'repo-cache.json');
+    this.file = path.join(dir, 'repo-cache.jsonl');
   }
 
   async load(): Promise<StoredRepo[]> {
@@ -39,28 +52,37 @@ export class FileCacheStore implements CacheStore {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw err;
     }
-    const parsed = JSON.parse(text) as Partial<FileFormat>;
-    if (parsed.version !== 1 || !Array.isArray(parsed.repos)) return [];
+    const [head, ...lines] = text.split('\n');
+    if (!head) return [];
+    const header = JSON.parse(head) as Partial<Header>;
+    if (header.version !== FORMAT) return [];
     const t = this.now();
-    return parsed.repos
-      .filter((r) => r.expires > t)
-      .map((r) => ({ key: r.key, freshUntil: r.freshUntil, expires: r.expires, value: normalizeRows(r.rows) }));
+    const out: StoredRepo[] = [];
+    for (const line of lines) {
+      if (!line) continue;
+      const r = JSON.parse(line) as Line;
+      if (r.expires > t) out.push({ key: r.key, freshUntil: r.freshUntil, expires: r.expires, value: normalizeRows(r.rows) });
+    }
+    return out;
   }
 
   async save(entries: StoredRepo[]): Promise<void> {
-    const data: FileFormat = {
-      version: 1,
-      savedAt: this.now(),
-      repos: entries.map((e) => ({
-        key: e.key,
-        freshUntil: e.freshUntil,
-        expires: e.expires,
-        rows: e.value.map((r) => [r.week, r.additions, r.deletions] as [number, number, number]),
-      })),
-    };
     await mkdir(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.${process.pid}.tmp`;
-    await writeFile(tmp, JSON.stringify(data));
+    const ws = createWriteStream(tmp);
+    const finished = once(ws, 'finish');
+    const write = async (obj: unknown): Promise<void> => {
+      if (!ws.write(`${JSON.stringify(obj)}\n`)) await once(ws, 'drain');
+    };
+    await write({ version: FORMAT, savedAt: this.now() } satisfies Header);
+    let n = 0;
+    for (const e of entries) {
+      const line: Line = { key: e.key, freshUntil: e.freshUntil, expires: e.expires, rows: e.value.map((r) => [r.week, r.additions, r.deletions]) };
+      await write(line);
+      if (++n % 50 === 0) await breathe();
+    }
+    ws.end();
+    await finished;
     await rename(tmp, this.file);
   }
 }
