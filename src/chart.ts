@@ -12,6 +12,11 @@ export type XAxis = 'date' | 'timeline';
 export interface ChartSeries {
   label: string;
   points: Point[];
+  /**
+   * Palette slot, default the series' position. Set it to the position a repository was
+   * requested in, so a repository keeps its colour when an earlier one failed to load.
+   */
+  colorIndex?: number;
 }
 
 export interface ChartOptions {
@@ -362,8 +367,9 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
   const starts = kept.map((s) => s.points[0]!.t);
   const series: ChartSeries[] =
     xAxis === 'timeline'
-      ? kept.map((s, i) => ({ label: s.label, points: s.points.map((p) => ({ t: p.t - starts[i]!, value: p.value })) }))
+      ? kept.map((s, i) => ({ ...s, points: s.points.map((p) => ({ t: p.t - starts[i]!, value: p.value })) }))
       : kept;
+  const slot = (i: number): number => (series[i]!.colorIndex ?? i) % MAX_SERIES;
 
   const compact = H < 300;
   // Font sizes used for layout estimates; the sketch face is set larger (see SKETCH_RULES).
@@ -444,7 +450,7 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
   parts.push(layer.text('lh-title', PAD, titleY, title, fs.title));
   if (subtitle) parts.push(layer.text('lh-sub', PAD, subtitleY, subtitle, fs.label));
   for (const item of legend) {
-    parts.push(`<rect class="lh-s${item.index} lh-swatch" x="${item.x}" y="${item.y - 10}" width="12" height="12" rx="3"/>`);
+    parts.push(`<rect class="lh-s${slot(item.index)} lh-swatch" x="${item.x}" y="${item.y - 10}" width="12" height="12" rx="3"/>`);
     parts.push(layer.text('lh-label', item.x + 18, item.y, item.label, fs.label));
   }
 
@@ -473,9 +479,9 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
     if (series.length === 1) {
       const first = s.points[0]!;
       const last = s.points[s.points.length - 1]!;
-      marks.push(`<path class="lh-s${index} lh-area" d="${d}L${f(x(last.t))},${f(y(0))}L${f(x(first.t))},${f(y(0))}Z"/>`);
+      marks.push(`<path class="lh-s${slot(index)} lh-area" d="${d}L${f(x(last.t))},${f(y(0))}L${f(x(first.t))},${f(y(0))}Z"/>`);
     }
-    marks.push(`<path class="lh-s${index} lh-line" data-series="${escapeXml(s.label)}" data-start="${starts[index]}" d="${d}"/>`);
+    marks.push(`<path class="lh-s${slot(index)} lh-line" data-series="${escapeXml(s.label)}" data-start="${starts[index]}" d="${d}"/>`);
     const last = s.points[s.points.length - 1]!;
     ends.push({ index, cx: x(last.t), cy: y(last.value), label: endLabels[index]!, ly: y(last.value) });
   });
@@ -502,7 +508,7 @@ export function renderChart(seriesIn: ChartSeries[], opts: ChartOptions = {}): s
   }
   for (const e of ends) {
     marks.push(`<circle class="lh-ring" cx="${f(e.cx)}" cy="${f(e.cy)}" r="6"/>`);
-    marks.push(`<circle class="lh-s${e.index} lh-mark" cx="${f(e.cx)}" cy="${f(e.cy)}" r="4"/>`);
+    marks.push(`<circle class="lh-s${slot(e.index)} lh-mark" cx="${f(e.cx)}" cy="${f(e.cy)}" r="4"/>`);
   }
   for (const e of ends) {
     text.push(layer.text('lh-end', plotRight + 10, e.ly + 4, e.label, fs.tick));

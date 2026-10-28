@@ -134,3 +134,10 @@ test('parseParams understands style and axis and ignores unknown values', () => 
   assert.equal(d.style, 'clean');
   assert.equal(d.xAxis, 'date');
 });
+
+test('a repository keeps the colour of its requested position when an earlier one fails', async () => {
+  const { handler } = makeHandler({ 'a/b': { status: 200, body: payload }, 'c/d': { status: 404 } });
+  const body = await (await get(handler, '/svg?repos=c/d,a/b')).text();
+  assert.match(body, /<path class="lh-s1 lh-line" data-series="a\/b"/, 'second requested repo draws in the second palette colour');
+  assert.ok(!body.includes('lh-s0 lh-line'));
+});

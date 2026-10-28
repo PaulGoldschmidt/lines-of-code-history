@@ -127,7 +127,8 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
     const labels = ok.map((o) => o.repo);
     const { title, subtitle } = describeChart(params.type, labels, params.xAxis);
     const chart = renderChart(
-      ok.map((o) => ({ label: o.repo, points: cumulative(o.rows, params.type) })),
+      // Colour by requested position, matching the chips in the web UI even when an earlier repo failed.
+      ok.map((o) => ({ label: o.repo, points: cumulative(o.rows, params.type), colorIndex: repos.indexOf(o.repo) })),
       {
         ...frame,
         title,
