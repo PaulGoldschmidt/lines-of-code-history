@@ -101,12 +101,5 @@ export function describeChart(type: SeriesType, labels: string[], xAxis: 'date' 
 }
 
 export function parseSeriesType(value: string | null | undefined): SeriesType {
-  switch ((value ?? '').toLowerCase()) {
-    case 'added':
-    case 'additions':
-    case 'cumulative':
-      return 'added';
-    default:
-      return 'net';
-  }
+  return (value ?? '').toLowerCase() === 'added' ? 'added' : 'net';
 }

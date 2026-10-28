@@ -1,9 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 /** Builds a WHATWG `Request` from a Node `IncomingMessage` (GET/HEAD only; bodies are ignored). */
-export function toRequest(req: IncomingMessage, protocol = 'http'): Request {
+export function toRequest(req: IncomingMessage): Request {
   const host = req.headers.host ?? 'localhost';
-  const url = new URL(req.url ?? '/', `${protocol}://${host}`);
+  const url = new URL(req.url ?? '/', `http://${host}`);
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
     if (value === undefined) continue;

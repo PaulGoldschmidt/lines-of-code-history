@@ -1,14 +1,12 @@
 import { MAX_SERIES, parseTheme, parseStyle, parseXAxis, renderChart, renderMessage, type Theme, type ChartStyle, type XAxis, MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT, DEFAULT_WIDTH, DEFAULT_HEIGHT, clamp } from './chart.js';
 import { GitHubError, parseRepo } from './github.js';
-import { RepoLoader, type LoaderOptions } from './loader.js';
+import { RepoLoader } from './loader.js';
 import { renderPage } from './page.js';
 import { cumulative, describeChart, isoDate, parseSeriesType, summarize } from './series.js';
 import type { SeriesType, WeeklyRow } from './types.js';
 
 export interface HandlerOptions {
   loader?: RepoLoader;
-  /** Used to build a loader when none is given. */
-  loaderOptions?: LoaderOptions;
   /** `Cache-Control` max-age for successful charts and data. Default 6 hours. */
   maxAgeSeconds?: number;
   now?: () => Date;
@@ -94,7 +92,7 @@ function jsonResponse(body: unknown, status: number, cacheControl: string): Resp
 
 /** Creates a fetch-style request handler serving the web UI, the SVG endpoint and the JSON API. */
 export function createHandler(options: HandlerOptions = {}): FetchHandler {
-  const loader = options.loader ?? new RepoLoader(options.loaderOptions);
+  const loader = options.loader ?? new RepoLoader();
   const maxAge = options.maxAgeSeconds ?? 6 * 60 * 60;
   const now = options.now ?? (() => new Date());
   const okCache = `public, max-age=${maxAge}, s-maxage=${maxAge}`;
@@ -190,11 +188,8 @@ export function createHandler(options: HandlerOptions = {}): FetchHandler {
             headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300' },
           });
         case '/svg':
-        case '/svg/':
-        case '/chart.svg':
           return await svg(url);
         case '/api/loc':
-        case '/api':
           return await api(url);
         case '/healthz':
           return jsonResponse({ ok: true, ...loader.stats() }, 200, 'no-store');

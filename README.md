@@ -125,7 +125,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0                       # the whole history is needed
-      - uses: PaulGoldschmidt/lines-of-code-history@main
+      - uses: PaulGoldschmidt/lines-of-code-history@v1
         id: loc
         with:
           path: loc-history.svg
