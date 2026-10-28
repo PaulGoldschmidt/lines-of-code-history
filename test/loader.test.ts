@@ -244,3 +244,20 @@ test('background polling waits for a fetch slot instead of being refused as busy
   assert.equal(abCalls, 2, 'the poller got its turn once the slot freed up');
   assert.equal(loader.stats().repos, 2);
 });
+
+test('once GitHub reports an exhausted quota, every repository fails fast until the reset', async () => {
+  let t = 1_000_000;
+  const calls: string[] = [];
+  const fetchFn = (async (input: unknown) => {
+    calls.push(String(input));
+    return new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String((t + 5000) / 1000) } });
+  }) as typeof fetch;
+  const loader = new RepoLoader({ fetch: fetchFn, sleep: async () => undefined, now: () => t, retries: 0 });
+  await assert.rejects(loader.load('a/one'), (e: unknown) => e instanceof GitHubError && e.code === 'rate_limited');
+  await assert.rejects(loader.load('a/two'), (e: unknown) => e instanceof GitHubError && e.code === 'rate_limited' && e.resetAt === t + 5000);
+  await assert.rejects(loader.load('a/three'));
+  assert.equal(calls.length, 1, 'only the first repository reached GitHub');
+  t += 6000;
+  await assert.rejects(loader.load('a/two'));
+  assert.equal(calls.length, 2, 'requests resume after the reset time');
+});

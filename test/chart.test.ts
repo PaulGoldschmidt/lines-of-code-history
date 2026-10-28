@@ -122,7 +122,8 @@ test('elapsedTicks counts from zero in weeks, months or years depending on the s
 
 test('parseStyle and parseXAxis fall back to the defaults', () => {
   assert.equal(parseStyle('sketch'), 'sketch');
-  assert.equal(parseStyle('XKCD'), 'sketch');
+  assert.equal(parseStyle('SKETCH'), 'sketch');
+  assert.equal(parseStyle('xkcd'), 'clean', 'no undocumented aliases');
   assert.equal(parseStyle('fancy'), 'clean');
   assert.equal(parseStyle(null), 'clean');
   assert.equal(parseXAxis('timeline'), 'timeline');
@@ -173,4 +174,10 @@ test('sketchTextWidth sums real glyph advances', () => {
   assert.ok(a > 300 && a < 700, String(a));
   assert.equal(sketchTextWidth('AA', 10), 2 * sketchTextWidth('A', 10));
   assert.ok(sketchTextWidth('Lines of code', 12) < 13 * 12 * 0.58, 'narrower than the generic estimate');
+});
+
+test('non-numeric sizes fall back to the defaults instead of producing NaN', () => {
+  const svg = renderChart([{ label: 'a', points: linear(3, 1) }], { width: Number('abc'), height: Number.NaN });
+  assert.match(svg, /^<svg[^>]* width="800" height="480"/);
+  assert.ok(!svg.includes('NaN'));
 });

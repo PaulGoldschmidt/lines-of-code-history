@@ -64,6 +64,8 @@ export class RepoLoader {
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPersist = 0;
   private persisting: Promise<void> = Promise.resolve();
+  /** GitHub's quota is global, so once it is exhausted every repository fails fast until this time. */
+  private rateLimitedUntil = 0;
 
   constructor(private readonly opts: LoaderOptions = {}) {
     const max = opts.maxEntries ?? 5000;
@@ -92,10 +94,11 @@ export class RepoLoader {
     const error = this.errors.get(key);
     if (hit) {
       // Stale: answer now, refresh behind the scenes unless a recent attempt already failed or is polling.
-      if (!error && !this.polling.has(key)) this.refresh(key).catch(() => undefined);
+      if (!error && !this.polling.has(key) && !this.rateLimited()) this.refresh(key).catch(() => undefined);
       return hit.value;
     }
     if (error) throw error;
+    if (this.rateLimited()) throw this.rateLimitError();
     if (this.polling.has(key)) throw this.pendingError(key);
     return this.refresh(key);
   }
@@ -154,6 +157,15 @@ export class RepoLoader {
     }
   }
 
+  private rateLimited(): boolean {
+    return this.now() < this.rateLimitedUntil;
+  }
+
+  private rateLimitError(): GitHubError {
+    const until = new Date(this.rateLimitedUntil).toISOString();
+    return new GitHubError('rate_limited', `GitHub API rate limit exceeded (resets ${until}); set GITHUB_TOKEN to raise it`, 403, this.rateLimitedUntil);
+  }
+
   private pendingError(key: string): GitHubError {
     return new GitHubError('pending', `GitHub is still computing statistics for ${key}; try again in a moment`, 202);
   }
@@ -166,6 +178,7 @@ export class RepoLoader {
 
   private rememberError(key: string, err: unknown): void {
     if (!(err instanceof GitHubError)) return;
+    if (err.code === 'rate_limited') this.rateLimitedUntil = Math.max(this.rateLimitedUntil, err.resetAt ?? this.now() + 60 * 1000);
     const ttl = this.errorTtl(err);
     if (ttl > 0) this.errors.set(key, err, ttl);
   }

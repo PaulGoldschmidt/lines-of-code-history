@@ -16,6 +16,8 @@ export class GitHubError extends Error {
     public readonly code: GitHubErrorCode,
     message: string,
     public readonly status?: number,
+    /** For `rate_limited`: when GitHub's quota resets, epoch milliseconds. */
+    public readonly resetAt?: number,
   ) {
     super(message);
     this.name = 'GitHubError';
@@ -63,8 +65,9 @@ export function parseRepo(input: string): string | null {
   s = s.replace(/[?#].*$/, '').replace(/\/+$/, '');
   const parts = s.split('/').filter(Boolean);
   if (parts.length < 2) return null;
-  const repo = `${parts[0]}/${parts[1]!.replace(/\.git$/i, '')}`;
-  if (repo === '.' || repo === '..') return null;
+  const name = parts[1]!.replace(/\.git$/i, '');
+  if (name === '.' || name === '..') return null;
+  const repo = `${parts[0]}/${name}`;
   return REPO_RE.test(repo) ? repo : null;
 }
 
@@ -140,8 +143,9 @@ export async function fetchCodeFrequency(repo: string, opts: GitHubClientOptions
       const remaining = res.headers.get('x-ratelimit-remaining');
       if (res.status === 429 || remaining === '0') {
         const reset = Number(res.headers.get('x-ratelimit-reset'));
-        const when = Number.isFinite(reset) && reset > 0 ? ` (resets ${new Date(reset * 1000).toISOString()})` : '';
-        throw new GitHubError('rate_limited', `GitHub API rate limit exceeded${when}; set GITHUB_TOKEN to raise it`, res.status);
+        const resetAt = Number.isFinite(reset) && reset > 0 ? reset * 1000 : undefined;
+        const when = resetAt ? ` (resets ${new Date(resetAt).toISOString()})` : '';
+        throw new GitHubError('rate_limited', `GitHub API rate limit exceeded${when}; set GITHUB_TOKEN to raise it`, res.status, resetAt);
       }
       throw new GitHubError('forbidden', `GitHub refused access to ${canonical} (HTTP 403)`, 403);
     }

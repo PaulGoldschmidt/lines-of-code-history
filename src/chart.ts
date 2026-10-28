@@ -67,12 +67,12 @@ export function parseTheme(value: string | null | undefined): Theme {
 
 export function parseStyle(value: string | null | undefined): ChartStyle {
   const v = (value ?? '').toLowerCase();
-  return v === 'sketch' || v === 'xkcd' || v === 'hand' ? 'sketch' : 'clean';
+  return v === 'sketch' ? 'sketch' : 'clean';
 }
 
 export function parseXAxis(value: string | null | undefined): XAxis {
   const v = (value ?? '').toLowerCase();
-  return v === 'timeline' || v === 'aligned' || v === 'relative' ? 'timeline' : 'date';
+  return v === 'timeline' ? 'timeline' : 'date';
 }
 
 export function escapeXml(s: string): string {
@@ -326,10 +326,9 @@ function sketchFilter(W: number, H: number): string {
 
 
 function dimensions(opts: ChartOptions): { W: number; H: number } {
-  return {
-    W: clamp(Math.round(opts.width ?? DEFAULT_WIDTH), MIN_WIDTH, MAX_WIDTH),
-    H: clamp(Math.round(opts.height ?? DEFAULT_HEIGHT), MIN_HEIGHT, MAX_HEIGHT),
-  };
+  const size = (v: number | undefined, fallback: number, lo: number, hi: number): number =>
+    v !== undefined && Number.isFinite(v) ? clamp(Math.round(v), lo, hi) : fallback;
+  return { W: size(opts.width, DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH), H: size(opts.height, DEFAULT_HEIGHT, MIN_HEIGHT, MAX_HEIGHT) };
 }
 
 function truncate(s: string, maxWidth: number, fontSize: number, style: ChartStyle = 'clean'): string {

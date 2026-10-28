@@ -14,7 +14,7 @@ test('parseRepo accepts the usual spellings', () => {
 });
 
 test('parseRepo rejects junk', () => {
-  for (const bad of ['', 'owner', 'owner/', '/repo', '-owner/repo', 'owner/re po', 'owner/<svg>', 'o'.repeat(40) + '/r']) {
+  for (const bad of ['', 'owner', 'owner/', '/repo', '-owner/repo', 'owner/re po', 'owner/<svg>', 'o'.repeat(40) + '/r', 'owner/..', 'owner/.', 'owner/../x']) {
     assert.equal(parseRepo(bad), null, bad);
   }
 });
@@ -96,4 +96,9 @@ test('the User-Agent sent to GitHub contains no URL', async () => {
   const ua = sent?.get('user-agent') ?? '';
   assert.equal(ua, DEFAULT_USER_AGENT);
   assert.ok(!/:\/\/|\(/.test(ua), ua);
+});
+
+test('a rate-limit response carries GitHub\'s reset time', async () => {
+  const f = fakeFetch([{ status: 403, body: {}, headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1700000000' } }]);
+  await assert.rejects(fetchCodeFrequency('a/b', { fetch: f, retries: 0 }), (e: unknown) => e instanceof GitHubError && e.code === 'rate_limited' && e.resetAt === 1700000000 * 1000);
 });

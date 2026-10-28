@@ -68,3 +68,17 @@ test('localCodeFrequency walks history, buckets by week and honours excludes', a
 test('localCodeFrequency rejects on a bad path', async () => {
   await assert.rejects(localCodeFrequency(join(tmpdir(), 'definitely-not-a-repo-' + Date.now())), /git/);
 });
+
+test('exclude globs match file names with non-ASCII characters', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'loc-history-utf8-'));
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com', GIT_AUTHOR_DATE: `${base + DAY} +0000`, GIT_COMMITTER_DATE: `${base + DAY} +0000` };
+  const git = (args: string[]) => execFileSync('git', ['-C', dir, ...args], { env, stdio: 'pipe' });
+  git(['init', '-q', '-b', 'main']);
+  mkdirSync(join(dir, 'docs'));
+  writeFileSync(join(dir, 'docs', 'caf\u00e9.md'), 'a\nb\nc\nd\n');
+  writeFileSync(join(dir, 'code.txt'), 'x\n');
+  git(['add', '.']);
+  git(['commit', '-q', '-m', 'utf8']);
+  const rows = await localCodeFrequency(dir, { exclude: ['docs/**'], untilSeconds: base + DAY });
+  assert.equal(rows.reduce((n, r) => n + r.additions, 0), 1, 'the four lines of docs/caf\u00e9.md are excluded');
+});

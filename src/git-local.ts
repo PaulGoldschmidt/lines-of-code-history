@@ -54,7 +54,8 @@ export function numstatPath(raw: string): string {
  */
 export function localCodeFrequency(repoPath: string, opts: LocalOptions = {}): Promise<WeeklyRow[]> {
   const filter = makePathFilter(opts.include, opts.exclude);
-  const args = ['-C', repoPath, 'log', '--first-parent', '-m', '--reverse', '--format=%x1e%ct', '--numstat', opts.ref ?? 'HEAD', '--'];
+  // quotePath=false keeps non-ASCII file names unquoted, so the include/exclude globs see the real path.
+  const args = ['-C', repoPath, '-c', 'core.quotePath=false', 'log', '--first-parent', '-m', '--reverse', '--format=%x1e%ct', '--numstat', opts.ref ?? 'HEAD', '--'];
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     const byWeek = new Map<number, WeeklyRow>();

@@ -6,7 +6,14 @@ import { sendResponse, toRequest } from './node-adapter.js';
 import { FileCacheStore } from './store.js';
 
 const env = process.env;
-const num = (name: string): number | undefined => (env[name] ? Number(env[name]) : undefined);
+const num = (name: string): number | undefined => {
+  const raw = env[name];
+  if (!raw) return undefined;
+  const value = Number(raw);
+  if (Number.isFinite(value)) return value;
+  console.warn(`ignoring ${name}=${JSON.stringify(raw)}: not a number, using the default`);
+  return undefined;
+};
 const seconds = (name: string): number | undefined => {
   const value = num(name);
   return value === undefined ? undefined : value * 1000;
@@ -32,7 +39,7 @@ const handler = createHandler({ loader, maxAgeSeconds: ttlSeconds });
 const server = http.createServer(async (req, res) => {
   const started = Date.now();
   try {
-    const response = await handler(toRequest(req, env.LOC_PUBLIC_PROTOCOL ?? 'http'));
+    const response = await handler(toRequest(req));
     await sendResponse(res, response);
     console.log(`${req.method} ${req.url} -> ${response.status} ${Date.now() - started}ms`);
   } catch (err) {
