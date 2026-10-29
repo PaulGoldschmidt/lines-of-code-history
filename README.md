@@ -12,23 +12,23 @@ See how the lines of code in a GitHub repository changed over time. It is [star-
 </a>
 -->
 
-Several repositories on one chart, served live by [loc-history.com](https://loc-history.com), for example express and star-history:
-
-<a href="https://loc-history.com/?repos=expressjs/express,star-history/star-history">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=expressjs/express,star-history/star-history&theme=dark">
-    <source media="(prefers-color-scheme: light)" srcset="https://loc-history.com/svg?repos=expressjs/express,star-history/star-history&theme=light">
-    <img alt="Lines of code history of expressjs/express and star-history/star-history" src="https://loc-history.com/svg?repos=expressjs/express,star-history/star-history&theme=light">
-  </picture>
-</a>
-
-Prefer it hand-drawn, counted from the first commit? Add `style=sketch` and `axis=timeline`, here for vitejs/vite:
+Here is vitejs/vite, served live by [loc-history.com](https://loc-history.com), hand-drawn with `style=sketch` and counted from its first commit with `axis=timeline`:
 
 <a href="https://loc-history.com/?repos=vitejs/vite&style=sketch&axis=timeline">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=vitejs/vite&style=sketch&axis=timeline&theme=dark">
     <source media="(prefers-color-scheme: light)" srcset="https://loc-history.com/svg?repos=vitejs/vite&style=sketch&axis=timeline&theme=light">
     <img alt="Sketch-style lines of code timeline of vitejs/vite" src="https://loc-history.com/svg?repos=vitejs/vite&style=sketch&axis=timeline&theme=light">
+  </picture>
+</a>
+
+Several repositories on one chart, in the default clean style, for example express and star-history:
+
+<a href="https://loc-history.com/?repos=expressjs/express,star-history/star-history">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=expressjs/express,star-history/star-history&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://loc-history.com/svg?repos=expressjs/express,star-history/star-history&theme=light">
+    <img alt="Lines of code history of expressjs/express and star-history/star-history" src="https://loc-history.com/svg?repos=expressjs/express,star-history/star-history&theme=light">
   </picture>
 </a>
 
