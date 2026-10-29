@@ -2,6 +2,7 @@
 
 See how the lines of code in a GitHub repository changed over time. It is [star-history](https://github.com/star-history/star-history), but for code: give it `owner/repo`, get an SVG chart you can embed in your README, and it keeps itself up to date.
 
+<!-- This repository's own chart, worth showing once it has some history:
 <a href="https://loc-history.com/?repos=PaulGoldschmidt/lines-of-code-history">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=PaulGoldschmidt/lines-of-code-history&theme=dark">
@@ -9,8 +10,9 @@ See how the lines of code in a GitHub repository changed over time. It is [star-
     <img alt="Lines of code history of this repository" src="https://loc-history.com/svg?repos=PaulGoldschmidt/lines-of-code-history&theme=light">
   </picture>
 </a>
+-->
 
-That is this repository's own chart, served live by [loc-history.com](https://loc-history.com). Several repositories on one chart, for example express and star-history:
+Several repositories on one chart, served live by [loc-history.com](https://loc-history.com), for example express and star-history:
 
 <a href="https://loc-history.com/?repos=expressjs/express,star-history/star-history">
   <picture>
