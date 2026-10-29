@@ -189,17 +189,6 @@ npm test          # builds, then runs node --test against dist/test/*.test.js
 npm run dev       # builds and starts the server
 ```
 
-Layout:
-
-- `src/github.ts`: GitHub API client with 202/404/422/rate-limit handling.
-- `src/loader.ts`: LRU cache with stale-while-revalidate, request de-duplication, GitHub concurrency limit, background polling, persistence (`src/cache.ts`, `src/limiter.ts`, `src/store.ts`).
-- `src/series.ts`: weekly rows to cumulative series.
-- `src/chart.ts`: the SVG renderer (no dependencies).
-- `src/handler.ts`: the HTTP routes as a fetch-style handler.
-- `src/page.ts`: the web UI.
-- `src/git-local.ts` and `src/cli.ts`: local git history and the command line.
-- `action.yml`: the composite GitHub Action, which runs the CLI.
-
 ## License
 
 [MIT](LICENSE)
