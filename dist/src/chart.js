@@ -1,0 +1,508 @@
+import { WEEK_MS, isoDate } from './series.js';
+import { SKETCH_GLYPHS, SKETCH_UNITS_PER_EM } from './sketch-font.js';
+/** Categorical palette, fixed order, stepped separately for light and dark surfaces. */
+export const SERIES_COLORS = {
+    light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'],
+    dark: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'],
+};
+export const MAX_SERIES = SERIES_COLORS.light.length;
+const INK = {
+    light: { surface: '#fcfcfb', primary: '#0b0b0b', secondary: '#52514e', muted: '#898781', grid: '#e1e0d9', axis: '#c3c2b7' },
+    dark: { surface: '#1a1a19', primary: '#f0efec', secondary: '#c3c2b7', muted: '#898781', grid: '#2c2c2a', axis: '#383835' },
+};
+export const DEFAULT_WIDTH = 800;
+export const DEFAULT_HEIGHT = 480;
+export const MIN_WIDTH = 320;
+export const MAX_WIDTH = 2400;
+export const MIN_HEIGHT = 200;
+export const MAX_HEIGHT = 1600;
+const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+const SKETCH_FALLBACK_FONT = "'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive";
+const PAD = 16;
+const SKETCH_FILTER_ID = 'lh-wobble';
+export function clamp(n, lo, hi) {
+    return Math.min(hi, Math.max(lo, n));
+}
+export function parseTheme(value) {
+    const v = (value ?? '').toLowerCase();
+    return v === 'dark' || v === 'auto' ? v : 'light';
+}
+export function parseStyle(value) {
+    const v = (value ?? '').toLowerCase();
+    return v === 'sketch' ? 'sketch' : 'clean';
+}
+export function parseXAxis(value) {
+    const v = (value ?? '').toLowerCase();
+    return v === 'timeline' ? 'timeline' : 'date';
+}
+export function escapeXml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+/** 1234567 → "1,234,567" */
+export function formatNumber(n) {
+    return Math.round(n).toLocaleString('en-US');
+}
+/** 1234567 becomes "1.23M", 2500 becomes "2.5k", -300 becomes "-300" */
+export function formatCompact(n) {
+    const abs = Math.abs(n);
+    const sign = n < 0 ? '-' : '';
+    const units = [
+        [1e9, 'B'],
+        [1e6, 'M'],
+        [1e3, 'k'],
+    ];
+    for (const [div, suffix] of units) {
+        if (abs >= div) {
+            const v = abs / div;
+            return sign + trimZeros(v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)) + suffix;
+        }
+    }
+    return sign + trimZeros(Number.isInteger(abs) ? String(abs) : abs.toFixed(1));
+}
+function trimZeros(s) {
+    return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
+}
+/** Rough text width for layout; the renderer is a browser, so this only needs to be safe. */
+export function textWidth(s, fontSize) {
+    return s.length * fontSize * 0.58;
+}
+/** Exact width of sketch text, which is drawn from glyph outlines with known advances. */
+export function sketchTextWidth(s, fontSize) {
+    let units = 0;
+    for (const ch of s)
+        units += SKETCH_GLYPHS[ch]?.[0] ?? SKETCH_UNITS_PER_EM * 0.58;
+    return (units * fontSize) / SKETCH_UNITS_PER_EM;
+}
+function measure(s, fontSize, style) {
+    return style === 'sketch' ? sketchTextWidth(s, fontSize) : textWidth(s, fontSize);
+}
+/**
+ * Collects text for one SVG. Clean charts use <text>; sketch charts draw each string from glyph
+ * outlines (<use> per character over shared <defs>), because GitHub's image proxy forbids fonts.
+ */
+class TextLayer {
+    style;
+    used = new Set();
+    constructor(style) {
+        this.style = style;
+    }
+    text(cls, x, y, str, size, anchor = 'start') {
+        const anchorAttr = anchor === 'start' ? '' : ` text-anchor="${anchor}"`;
+        if (this.style !== 'sketch')
+            return `<text class="${cls}" x="${f(x)}" y="${f(y)}"${anchorAttr}>${escapeXml(str)}</text>`;
+        const chars = Array.from(str);
+        if (chars.some((ch) => !SKETCH_GLYPHS[ch])) {
+            // A character outside the embedded set: fall back to a real text element in a cursive face.
+            return `<text class="${cls}" x="${f(x)}" y="${f(y)}"${anchorAttr} font-family="${escapeXml(SKETCH_FALLBACK_FONT)}" font-size="${size}">${escapeXml(str)}</text>`;
+        }
+        const scale = size / SKETCH_UNITS_PER_EM;
+        const width = sketchTextWidth(str, size);
+        const x0 = anchor === 'end' ? x - width : anchor === 'middle' ? x - width / 2 : x;
+        let advance = 0;
+        const uses = [];
+        for (const ch of chars) {
+            const [adv, d] = SKETCH_GLYPHS[ch];
+            if (d) {
+                const id = `lh-g${ch.codePointAt(0)}`;
+                this.used.add(ch);
+                uses.push(`<use href="#${id}" x="${advance}"/>`);
+            }
+            advance += adv;
+        }
+        return `<g class="${cls}" transform="translate(${f(x0)} ${f(y)}) scale(${scale.toFixed(5)} ${(-scale).toFixed(5)})" aria-label="${escapeXml(str)}">${uses.join('')}</g>`;
+    }
+    /** Glyph outlines referenced so far, to be emitted once per SVG. */
+    defs() {
+        if (this.used.size === 0)
+            return '';
+        const paths = [...this.used].map((ch) => `<path id="lh-g${ch.codePointAt(0)}" d="${SKETCH_GLYPHS[ch][1]}"/>`);
+        return `<defs>${paths.join('')}</defs>`;
+    }
+}
+/** "Nice" axis ticks covering [min, max] with roughly `target` steps; `integer` keeps steps >= 1. */
+export function niceTicks(min, max, target = 5, integer = false) {
+    if (!Number.isFinite(min) || !Number.isFinite(max))
+        return [0];
+    if (max - min < 1e-9)
+        max = min + 1;
+    const rough = (max - min) / Math.max(1, target);
+    const mag = 10 ** Math.floor(Math.log10(rough));
+    const norm = rough / mag;
+    let step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+    if (integer && step < 1)
+        step = 1;
+    const decimals = Math.max(0, Math.ceil(-Math.log10(step)) + 1);
+    const start = Math.floor(min / step) * step;
+    const end = Math.ceil(max / step) * step;
+    const ticks = [];
+    for (let v = start; v <= end + step / 2; v += step)
+        ticks.push(Number(v.toFixed(decimals)));
+    return ticks;
+}
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const CANDIDATES = [
+    ['week', 1], ['week', 2], ['month', 1], ['month', 2], ['month', 3], ['month', 6],
+    ['year', 1], ['year', 2], ['year', 5], ['year', 10], ['year', 20], ['year', 50],
+];
+function fmtDay(t) {
+    const d = new Date(t);
+    return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+}
+function generateTicks(unit, step, t0, t1) {
+    const out = [];
+    const d0 = new Date(t0);
+    if (unit === 'year') {
+        let y = d0.getUTCFullYear();
+        if (Date.UTC(y, 0, 1) < t0)
+            y++;
+        while (y % step !== 0)
+            y++;
+        for (; Date.UTC(y, 0, 1) <= t1; y += step)
+            out.push({ t: Date.UTC(y, 0, 1), label: String(y) });
+    }
+    else if (unit === 'month') {
+        let y = d0.getUTCFullYear();
+        let m = d0.getUTCMonth();
+        if (Date.UTC(y, m, 1) < t0)
+            m++;
+        while (m % step !== 0)
+            m++;
+        for (;;) {
+            y += Math.floor(m / 12);
+            m %= 12;
+            const t = Date.UTC(y, m, 1);
+            if (t > t1)
+                break;
+            out.push({ t, label: `${MONTHS[m]} ${y}` });
+            m += step;
+        }
+    }
+    else {
+        const d = new Date(t0);
+        let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - d.getUTCDay());
+        if (t < t0)
+            t += WEEK_MS;
+        for (; t <= t1; t += WEEK_MS * step) {
+            const w = new Date(t);
+            out.push({ t, label: `${MONTHS[w.getUTCMonth()]} ${w.getUTCDate()}` });
+        }
+    }
+    return out;
+}
+/** Calendar-aligned x-axis ticks: the finest interval whose labels fit in `availableWidth` pixels. */
+export function timeTicks(t0, t1, availableWidth, fontSize = 11) {
+    for (const [unit, step] of CANDIDATES) {
+        const ticks = generateTicks(unit, step, t0, t1);
+        const widest = Math.max(0, ...ticks.map((t) => textWidth(t.label, fontSize)));
+        if (ticks.length * (widest + 24) <= availableWidth) {
+            if (ticks.length >= 2)
+                return ticks;
+            break;
+        }
+    }
+    return [
+        { t: t0, label: fmtDay(t0) },
+        { t: t1, label: fmtDay(t1) },
+    ];
+}
+const DAY_MS = 86400 * 1000;
+const MONTH_MS = 30.436875 * DAY_MS;
+const YEAR_MS = 365.2425 * DAY_MS;
+const ELAPSED_CANDIDATES = [
+    [WEEK_MS, 'wk', 1], [WEEK_MS, 'wk', 2], [MONTH_MS, 'mo', 1], [MONTH_MS, 'mo', 2], [MONTH_MS, 'mo', 3], [MONTH_MS, 'mo', 6],
+    [YEAR_MS, 'yr', 1], [YEAR_MS, 'yr', 2], [YEAR_MS, 'yr', 5], [YEAR_MS, 'yr', 10], [YEAR_MS, 'yr', 20], [YEAR_MS, 'yr', 50],
+];
+/** Ticks for an elapsed-time axis starting at 0: the finest of weeks, months or years whose labels fit. */
+export function elapsedTicks(span, availableWidth, fontSize = 11) {
+    for (const [unit, name, step] of ELAPSED_CANDIDATES) {
+        const ticks = [];
+        for (let n = 0; n * step * unit <= span + unit * step * 0.001; n++) {
+            const k = n * step;
+            ticks.push({ t: k * unit, label: k === 0 ? '0' : `${k} ${name}` });
+        }
+        const widest = Math.max(0, ...ticks.map((t) => textWidth(t.label, fontSize)));
+        if (ticks.length * (widest + 24) <= availableWidth) {
+            if (ticks.length >= 2)
+                return ticks;
+            break;
+        }
+    }
+    return [
+        { t: 0, label: '0' },
+        { t: span, label: `${Math.max(1, Math.round(span / DAY_MS))} days` },
+    ];
+}
+function modeRules(mode) {
+    const k = INK[mode];
+    const series = SERIES_COLORS[mode].map((c, i) => `.lh-s${i}{stroke:${c};fill:${c}}`).join('');
+    return (`.lh-bg{fill:${k.surface}}.lh-title{fill:${k.primary}}.lh-sub,.lh-label,.lh-end{fill:${k.secondary}}` +
+        `.lh-tick,.lh-foot{fill:${k.muted}}.lh-grid{stroke:${k.grid}}.lh-axis,.lh-leader{stroke:${k.axis}}` +
+        `.lh-ring{fill:${k.surface}}.lh-msg{fill:${k.secondary}}${series}`);
+}
+// Series colours are set per `.lh-sN` class on both stroke and fill. The element-type-qualified
+// selectors below are more specific, so they win regardless of rule order or theme blocks.
+const STATIC_RULES = '.lh-title{font-size:16px;font-weight:600}.lh-sub,.lh-label{font-size:12px}' +
+    '.lh-tick{font-size:11px;font-variant-numeric:tabular-nums}.lh-end{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}' +
+    '.lh-foot{font-size:10px}.lh-msg{font-size:13px}' +
+    '.lh-grid,.lh-axis,.lh-leader{stroke-width:1;shape-rendering:crispEdges}' +
+    'path.lh-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}' +
+    'path.lh-area{stroke:none;opacity:.1}rect.lh-swatch{stroke:none}circle.lh-mark{stroke:none}';
+// Sketch: text drawn from handwriting glyph outlines (see TextLayer), set slightly larger to
+// compensate for the lighter weight, a heavier wobbly line and a dashed grid. The wobble itself
+// is an SVG displacement filter applied to the marks group.
+const SKETCH_RULES = '.lh-title{font-size:19px;font-weight:400}.lh-sub,.lh-label{font-size:13.5px}' +
+    '.lh-tick{font-size:12.5px}.lh-end{font-size:12.5px;font-weight:400}.lh-foot{font-size:11.5px}.lh-msg{font-size:15px}' +
+    '.lh-grid,.lh-axis,.lh-leader{stroke-width:1;shape-rendering:auto;stroke-linecap:round}.lh-grid{stroke-dasharray:3 6}' +
+    '.lh-axis{stroke-width:1.5}' +
+    'path.lh-line{fill:none;stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round}' +
+    'path.lh-area{stroke:none;opacity:.12}rect.lh-swatch{stroke:none}circle.lh-mark{stroke:none}';
+function styleBlock(theme, style = 'clean') {
+    const base = style === 'sketch' ? SKETCH_RULES : STATIC_RULES;
+    const css = theme === 'auto'
+        ? `${base}${modeRules('light')}@media (prefers-color-scheme:dark){${modeRules('dark')}}`
+        : `${base}${modeRules(theme)}`;
+    return `<style>${css}</style>`;
+}
+function sketchFilter(W, H) {
+    // Low-frequency fractal noise displaces strokes by up to ~2px, like a hand that is steady but not a ruler.
+    return (`<filter id="${SKETCH_FILTER_ID}" x="-2%" y="-2%" width="104%" height="104%" filterUnits="userSpaceOnUse" ` +
+        `color-interpolation-filters="sRGB" primitiveUnits="userSpaceOnUse">` +
+        `<feTurbulence type="fractalNoise" baseFrequency="${(0.9 / Math.sqrt(W)).toFixed(4)} ${(0.9 / Math.sqrt(H)).toFixed(4)}" numOctaves="2" seed="7" result="n"/>` +
+        `<feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G"/></filter>`);
+}
+function dimensions(opts) {
+    const size = (v, fallback, lo, hi) => v !== undefined && Number.isFinite(v) ? clamp(Math.round(v), lo, hi) : fallback;
+    return { W: size(opts.width, DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH), H: size(opts.height, DEFAULT_HEIGHT, MIN_HEIGHT, MAX_HEIGHT) };
+}
+function truncate(s, maxWidth, fontSize, style = 'clean') {
+    if (measure(s, fontSize, style) <= maxWidth)
+        return s;
+    const chars = Array.from(s);
+    let n = Math.max(1, Math.floor(maxWidth / (fontSize * 0.58)) - 1);
+    if (style === 'sketch') {
+        n = chars.length;
+        while (n > 1 && measure(chars.slice(0, n).join('') + '…', fontSize, style) > maxWidth)
+            n--;
+    }
+    return chars.slice(0, n).join('') + '…';
+}
+function f(n) {
+    return n.toFixed(1).replace(/\.0$/, '');
+}
+function footerText(opts) {
+    return opts.footer ?? `lines-of-code-history / ${isoDate(opts.now)}`;
+}
+/** Renders a multi-series line chart as a standalone SVG document. */
+export function renderChart(seriesIn, opts = {}) {
+    const { W, H } = dimensions(opts);
+    const theme = opts.theme ?? 'light';
+    const style = opts.style ?? 'clean';
+    const xAxis = opts.xAxis ?? 'date';
+    const kept = seriesIn.slice(0, MAX_SERIES).filter((s) => s.points.length > 0);
+    if (kept.length === 0)
+        return renderMessage(opts.title ?? 'Lines of code', 'No data to plot.', opts);
+    // Timeline mode re-bases every series at its own first point, so growth curves start together.
+    const starts = kept.map((s) => s.points[0].t);
+    const series = xAxis === 'timeline'
+        ? kept.map((s, i) => ({ ...s, points: s.points.map((p) => ({ t: p.t - starts[i], value: p.value })) }))
+        : kept;
+    const slot = (i) => (series[i].colorIndex ?? i) % MAX_SERIES;
+    const compact = H < 300;
+    // Font sizes used for layout estimates; the sketch face is set larger (see SKETCH_RULES).
+    const fs = style === 'sketch' ? { title: 19, label: 13.5, tick: 12.5, foot: 11.5 } : { title: 16, label: 12, tick: 11, foot: 10 };
+    const layer = new TextLayer(style);
+    const tw = (s, size) => measure(s, size, style);
+    const title = truncate(opts.title ?? 'Lines of code', W - 2 * PAD, fs.title, style);
+    const subtitle = compact ? undefined : opts.subtitle && truncate(opts.subtitle, W - 2 * PAD, fs.label, style);
+    const titleY = PAD + 17;
+    const subtitleY = titleY + 18;
+    let cursor = subtitle ? subtitleY + 8 : titleY + 8;
+    // Legend: only for two or more series; a single series is named by the title.
+    const legend = [];
+    if (series.length >= 2) {
+        let lx = PAD;
+        let ly = cursor + 12;
+        series.forEach((s, index) => {
+            const label = truncate(s.label, W * 0.6, fs.label, style);
+            const w = 12 + 6 + tw(label, fs.label) + 18;
+            if (lx > PAD && lx + w - 18 > W - PAD) {
+                lx = PAD;
+                ly += 18;
+            }
+            legend.push({ x: lx, y: ly, index, label });
+            lx += w;
+        });
+        cursor = ly + 10;
+    }
+    const plotTop = cursor + 12;
+    const footer = footerText(opts);
+    const footY = H - PAD + 4;
+    const plotBottom = footY - 14 - 20;
+    // Y domain always includes zero; headroom keeps the line off the top gridline.
+    let minV = Infinity;
+    let maxV = -Infinity;
+    let minT = Infinity;
+    let maxT = -Infinity;
+    for (const s of series) {
+        for (const p of s.points) {
+            if (p.value < minV)
+                minV = p.value;
+            if (p.value > maxV)
+                maxV = p.value;
+            if (p.t < minT)
+                minT = p.t;
+            if (p.t > maxT)
+                maxT = p.t;
+        }
+    }
+    let v0 = Math.min(0, minV);
+    let v1 = Math.max(0, maxV);
+    if (v1 - v0 < 1)
+        v1 = v0 + 1;
+    v1 += (v1 - v0) * 0.04;
+    const plotH = plotBottom - plotTop;
+    const yTicks = niceTicks(v0, v1, clamp(Math.round(plotH / 55), 2, 8), true);
+    v0 = yTicks[0];
+    v1 = yTicks[yTicks.length - 1];
+    const yLabelW = Math.max(...yTicks.map((v) => tw(formatCompact(v), fs.tick)));
+    const plotLeft = PAD + yLabelW + 10;
+    const endLabels = series.map((s) => formatNumber(s.points[s.points.length - 1].value));
+    const endLabelW = Math.max(...endLabels.map((l) => tw(l, fs.tick)));
+    const plotRight = W - PAD - endLabelW - 12;
+    const plotW = plotRight - plotLeft;
+    let t0 = minT;
+    let t1 = maxT;
+    if (t1 - t0 < WEEK_MS) {
+        t0 -= WEEK_MS / 2;
+        t1 += WEEK_MS / 2;
+    }
+    if (xAxis === 'timeline')
+        t0 = 0;
+    const xTicks = xAxis === 'timeline' ? elapsedTicks(t1, plotW, fs.tick) : timeTicks(t0, t1, plotW, fs.tick);
+    const x = (t) => plotLeft + ((t - t0) / (t1 - t0)) * plotW;
+    const y = (v) => plotBottom - ((v - v0) / (v1 - v0)) * plotH;
+    const parts = [];
+    parts.push(`<rect class="lh-bg" width="${W}" height="${H}"/>`);
+    parts.push(layer.text('lh-title', PAD, titleY, title, fs.title));
+    if (subtitle)
+        parts.push(layer.text('lh-sub', PAD, subtitleY, subtitle, fs.label));
+    for (const item of legend) {
+        parts.push(`<rect class="lh-s${slot(item.index)} lh-swatch" x="${item.x}" y="${item.y - 10}" width="12" height="12" rx="3"/>`);
+        parts.push(layer.text('lh-label', item.x + 18, item.y, item.label, fs.label));
+    }
+    // Grid, axes and tick labels. Strokes go into one group so the sketch filter can wobble them together.
+    const marks = [];
+    const text = [];
+    for (const v of yTicks) {
+        const yy = f(y(v));
+        const cls = v === 0 ? 'lh-axis' : 'lh-grid';
+        marks.push(`<line class="${cls}" x1="${f(plotLeft)}" x2="${f(plotRight)}" y1="${yy}" y2="${yy}"/>`);
+        text.push(layer.text('lh-tick', plotLeft - 8, y(v) + 4, formatCompact(v), fs.tick, 'end'));
+    }
+    if (!yTicks.includes(v0) || v0 !== 0) {
+        marks.push(`<line class="lh-axis" x1="${f(plotLeft)}" x2="${f(plotRight)}" y1="${f(plotBottom)}" y2="${f(plotBottom)}"/>`);
+    }
+    for (const tick of xTicks) {
+        const xx = f(x(tick.t));
+        marks.push(`<line class="lh-axis" x1="${xx}" x2="${xx}" y1="${f(plotBottom)}" y2="${f(plotBottom + 4)}"/>`);
+        text.push(layer.text('lh-tick', x(tick.t), plotBottom + 17, tick.label, fs.tick, 'middle'));
+    }
+    // Marks: area wash for a single series, 2px lines, end dots with a surface ring.
+    const ends = [];
+    series.forEach((s, index) => {
+        const d = s.points.map((p, i) => `${i ? 'L' : 'M'}${f(x(p.t))},${f(y(p.value))}`).join('');
+        if (series.length === 1) {
+            const first = s.points[0];
+            const last = s.points[s.points.length - 1];
+            marks.push(`<path class="lh-s${slot(index)} lh-area" d="${d}L${f(x(last.t))},${f(y(0))}L${f(x(first.t))},${f(y(0))}Z"/>`);
+        }
+        marks.push(`<path class="lh-s${slot(index)} lh-line" data-series="${escapeXml(s.label)}" data-start="${starts[index]}" d="${d}"/>`);
+        const last = s.points[s.points.length - 1];
+        ends.push({ index, cx: x(last.t), cy: y(last.value), label: endLabels[index], ly: y(last.value) });
+    });
+    // End labels: keep 13px apart; a label that had to move gets a leader line back to its dot.
+    const sorted = [...ends].sort((a, b) => a.cy - b.cy);
+    const minY = plotTop + 6;
+    const maxY = plotBottom - 2;
+    for (let i = 0; i < sorted.length; i++) {
+        const cur = sorted[i];
+        cur.ly = clamp(cur.ly, minY, maxY);
+        if (i > 0 && cur.ly - sorted[i - 1].ly < 13)
+            cur.ly = sorted[i - 1].ly + 13;
+    }
+    for (let i = sorted.length - 1; i >= 0; i--) {
+        const cur = sorted[i];
+        if (cur.ly > maxY)
+            cur.ly = maxY;
+        if (i < sorted.length - 1 && sorted[i + 1].ly - cur.ly < 13)
+            cur.ly = sorted[i + 1].ly - 13;
+    }
+    for (const e of ends) {
+        const lx = plotRight + 10;
+        if (Math.abs(e.ly - e.cy) > 1.5) {
+            marks.push(`<line class="lh-leader" x1="${f(e.cx + 7)}" y1="${f(e.cy)}" x2="${f(lx - 3)}" y2="${f(e.ly)}"/>`);
+        }
+    }
+    for (const e of ends) {
+        marks.push(`<circle class="lh-ring" cx="${f(e.cx)}" cy="${f(e.cy)}" r="6"/>`);
+        marks.push(`<circle class="lh-s${slot(e.index)} lh-mark" cx="${f(e.cx)}" cy="${f(e.cy)}" r="4"/>`);
+    }
+    for (const e of ends) {
+        text.push(layer.text('lh-end', plotRight + 10, e.ly + 4, e.label, fs.tick));
+    }
+    if (style === 'sketch') {
+        parts.push(sketchFilter(W, H), `<g filter="url(#${SKETCH_FILTER_ID})">${marks.join('')}</g>`);
+    }
+    else {
+        parts.push(...marks);
+    }
+    parts.push(...text);
+    // Footer.
+    parts.push(layer.text('lh-foot', W - PAD, footY, footer, fs.foot, 'end'));
+    if (opts.note) {
+        const room = W - 2 * PAD - tw(footer, fs.foot) - 16;
+        if (room > 60)
+            parts.push(layer.text('lh-foot', PAD, footY, truncate(opts.note, room, fs.foot, style), fs.foot));
+    }
+    const description = opts.description ??
+        `${title}. ${series.map((s, i) => `${s.label}: ${endLabels[i]}`).join('; ')} as of ${isoDate(opts.now)}.`;
+    return (`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="lh-title" ` +
+        `font-family="${FONT}" data-plot="${f(plotLeft)},${f(plotTop)},${f(plotRight)},${f(plotBottom)}" ` +
+        `data-x="${t0},${t1}" data-y="${v0},${v1}" data-axis="${xAxis}" data-style="${style}">` +
+        `<title id="lh-title">${escapeXml(description)}</title>${styleBlock(theme, style)}${layer.defs()}${parts.join('')}</svg>`);
+}
+function wrapWords(text, maxChars) {
+    const lines = [];
+    let line = '';
+    for (const word of text.split(/\s+/).filter(Boolean)) {
+        if (line && line.length + 1 + word.length > maxChars) {
+            lines.push(line);
+            line = word;
+        }
+        else {
+            line = line ? `${line} ${word}` : word;
+        }
+    }
+    if (line)
+        lines.push(line);
+    return lines.slice(0, 8);
+}
+/** Renders a chart-sized placeholder carrying a message (errors, "still computing", usage hints). */
+export function renderMessage(title, message, opts = {}) {
+    const { W, H } = dimensions(opts);
+    const theme = opts.theme ?? 'light';
+    const style = opts.style ?? 'clean';
+    const layer = new TextLayer(style);
+    const sizes = style === 'sketch' ? { title: 19, msg: 15, foot: 11.5 } : { title: 16, msg: 13, foot: 10 };
+    const lines = wrapWords(message, Math.max(16, Math.floor((W - 2 * PAD) / (sizes.msg * 0.55))));
+    const lineHeight = Math.round(sizes.msg * 1.4);
+    const startY = H / 2 - ((lines.length - 1) * lineHeight) / 2 + 4;
+    const body = lines.map((l, i) => layer.text('lh-msg', W / 2, startY + i * lineHeight, l, sizes.msg, 'middle')).join('');
+    const content = `<rect class="lh-bg" width="${W}" height="${H}"/>` +
+        layer.text('lh-title', PAD, PAD + 17, truncate(title, W - 2 * PAD, sizes.title, style), sizes.title) +
+        body +
+        layer.text('lh-foot', W - PAD, H - PAD + 4, footerText(opts), sizes.foot, 'end');
+    return (`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="lh-title" font-family="${FONT}">` +
+        `<title id="lh-title">${escapeXml(`${title}: ${message}`)}</title>${styleBlock(theme, style)}${layer.defs()}${content}</svg>`);
+}
+//# sourceMappingURL=chart.js.map
