@@ -20,13 +20,13 @@ That is this repository's own chart, served live by [loc-history.com](https://lo
   </picture>
 </a>
 
-Prefer it hand-drawn, with every repository starting at its first commit? Add `style=sketch` and `axis=timeline`:
+Prefer it hand-drawn, counted from the first commit? Add `style=sketch` and `axis=timeline`, here for vitejs/vite:
 
-<a href="https://loc-history.com/?repos=expressjs/express,pallets/flask&style=sketch&axis=timeline">
+<a href="https://loc-history.com/?repos=vitejs/vite&style=sketch&axis=timeline">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=expressjs/express,pallets/flask&style=sketch&axis=timeline&theme=dark">
-    <source media="(prefers-color-scheme: light)" srcset="https://loc-history.com/svg?repos=expressjs/express,pallets/flask&style=sketch&axis=timeline&theme=light">
-    <img alt="Sketch-style timeline of expressjs/express and pallets/flask" src="https://loc-history.com/svg?repos=expressjs/express,pallets/flask&style=sketch&axis=timeline&theme=light">
+    <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=vitejs/vite&style=sketch&axis=timeline&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://loc-history.com/svg?repos=vitejs/vite&style=sketch&axis=timeline&theme=light">
+    <img alt="Sketch-style lines of code timeline of vitejs/vite" src="https://loc-history.com/svg?repos=vitejs/vite&style=sketch&axis=timeline&theme=light">
   </picture>
 </a>
 
