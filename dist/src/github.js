@@ -1,0 +1,125 @@
+import { fillWeeks, normalizeRows } from './series.js';
+export class GitHubError extends Error {
+    code;
+    status;
+    resetAt;
+    constructor(code, message, status, 
+    /** For `rate_limited`: when GitHub's quota resets, epoch milliseconds. */
+    resetAt) {
+        super(message);
+        this.code = code;
+        this.status = status;
+        this.resetAt = resetAt;
+        this.name = 'GitHubError';
+    }
+    /** True when the same request is expected to succeed shortly (worth an automatic retry). */
+    get transient() {
+        return this.code === 'pending' || this.code === 'busy';
+    }
+    /** Status to use when relaying this error to our own API clients. */
+    get httpStatus() {
+        switch (this.code) {
+            case 'invalid_repo':
+                return 400;
+            case 'not_found':
+                return 404;
+            case 'too_large':
+                return 422;
+            case 'forbidden':
+                return 403;
+            case 'pending':
+            case 'rate_limited':
+            case 'busy':
+                return 503;
+            default:
+                return 502;
+        }
+    }
+}
+// GitHub user/org names: alphanumerics and hyphens, max 39 chars, no leading hyphen.
+// Repository names: alphanumerics, '.', '-', '_', max 100 chars.
+const REPO_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
+/**
+ * Accepts `owner/name`, `github.com/owner/name`, `https://github.com/owner/name.git`,
+ * `git@github.com:owner/name`, or a deep link like `github.com/owner/name/tree/main`.
+ * Returns the canonical `owner/name` or null when the input is not a repository.
+ */
+export function parseRepo(input) {
+    let s = input.trim();
+    s = s.replace(/^(?:https?:\/\/)?(?:www\.)?github\.com\//i, '');
+    s = s.replace(/^git@github\.com:/i, '');
+    s = s.replace(/[?#].*$/, '').replace(/\/+$/, '');
+    const parts = s.split('/').filter(Boolean);
+    if (parts.length < 2)
+        return null;
+    const name = parts[1].replace(/\.git$/i, '');
+    if (name === '.' || name === '..')
+        return null;
+    const repo = `${parts[0]}/${name}`;
+    return REPO_RE.test(repo) ? repo : null;
+}
+export const DEFAULT_RETRIES = 5;
+export const DEFAULT_RETRY_DELAY_MS = 1500;
+export const DEFAULT_USER_AGENT = 'lines-of-code-history/0.1';
+/**
+ * Loads the weekly additions/deletions history of a repository from GitHub's
+ * `stats/code_frequency` endpoint and returns one row per week up to the current week.
+ */
+export async function fetchCodeFrequency(repo, opts = {}) {
+    const canonical = parseRepo(repo);
+    if (!canonical)
+        throw new GitHubError('invalid_repo', `"${repo}" is not a valid owner/name`);
+    const doFetch = opts.fetch ?? globalThis.fetch;
+    if (typeof doFetch !== 'function')
+        throw new Error('global fetch is unavailable; pass options.fetch');
+    const sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    const retries = opts.retries ?? DEFAULT_RETRIES;
+    const delay = opts.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+    const now = opts.now ?? Date.now;
+    const url = `${opts.apiBase ?? 'https://api.github.com'}/repos/${canonical}/stats/code_frequency`;
+    const headers = {
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        // Keep this free of URLs: GitHub never finishes computing statistics for requests whose
+        // User-Agent contains one (it keeps answering 202 indefinitely), while plain agents get 200.
+        'User-Agent': opts.userAgent ?? DEFAULT_USER_AGENT,
+    };
+    if (opts.token)
+        headers.Authorization = `Bearer ${opts.token}`;
+    for (let attempt = 0;; attempt++) {
+        const res = await doFetch(url, { headers });
+        if (res.status === 200) {
+            const body = await res.json();
+            return fillWeeks(normalizeRows(body), Math.floor(now() / 1000));
+        }
+        // Drain the body so keep-alive connections can be reused.
+        void res.arrayBuffer().catch(() => undefined);
+        if (res.status === 204)
+            return [];
+        if (res.status === 202) {
+            if (attempt >= retries) {
+                throw new GitHubError('pending', `GitHub is still computing statistics for ${canonical}; try again in a moment`, 202);
+            }
+            await sleep(delay);
+            continue;
+        }
+        if (res.status === 404) {
+            throw new GitHubError('not_found', `${canonical} was not found on GitHub (private repositories need a token)`, 404);
+        }
+        if (res.status === 422) {
+            throw new GitHubError('too_large', `${canonical} has more than 10,000 commits, which GitHub's statistics API does not support; render it from a local clone with the CLI or the GitHub Action instead`, 422);
+        }
+        if (res.status === 403 || res.status === 429) {
+            const remaining = res.headers.get('x-ratelimit-remaining');
+            if (res.status === 429 || remaining === '0') {
+                const reset = Number(res.headers.get('x-ratelimit-reset'));
+                const resetAt = Number.isFinite(reset) && reset > 0 ? reset * 1000 : undefined;
+                const when = resetAt ? ` (resets ${new Date(resetAt).toISOString()})` : '';
+                throw new GitHubError('rate_limited', `GitHub API rate limit exceeded${when}; set GITHUB_TOKEN to raise it`, res.status, resetAt);
+            }
+            throw new GitHubError('forbidden', `GitHub refused access to ${canonical} (HTTP 403)`, 403);
+        }
+        throw new GitHubError('upstream', `GitHub returned HTTP ${res.status} for ${canonical}`, res.status);
+    }
+}
+//# sourceMappingURL=github.js.map
