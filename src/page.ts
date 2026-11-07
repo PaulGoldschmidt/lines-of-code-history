@@ -1,4 +1,5 @@
-import { SERIES_COLORS } from './chart.js';
+import { escapeXml, SERIES_COLORS } from './chart.js';
+import { AGENT_INSTRUCTIONS } from './agent-instructions.js';
 
 const REPO_URL = 'https://github.com/PaulGoldschmidt/lines-of-code-history';
 
@@ -213,6 +214,13 @@ footer p{margin:0 0 8px}
     <div class="feature"><h3>Live, zero setup</h3><p>Charts come straight from GitHub's statistics and refresh themselves. Paste one line into a README and forget about it.</p></div>
     <div class="feature"><h3>Your look, your axis</h3><p>Clean or hand-drawn sketch style, calendar dates or a timeline that starts every repository at its first commit, light or dark.</p></div>
     <div class="feature"><h3>Any size of repository</h3><p>GitHub's API stops at 10,000 commits. The <a href="${REPO_URL}#the-github-action">GitHub Action</a> and <a href="${REPO_URL}#the-cli">CLI</a> render from a clone instead and can exclude lockfiles or vendored code.</p></div>
+  </section>
+
+  <section class="card" id="agentCard">
+    <h2>Private repository? Hand this to your coding agent</h2>
+    <p class="lede" style="font-size:13px;margin-bottom:10px">The hosted charts only see public repositories. For a private one, paste these instructions into Claude Code, Codex or Copilot. The agent sets up the GitHub Action, picks sensible excludes and opens a pull request with the chart.</p>
+    <div class="snippet-head"><span>Agent instructions</span><button class="ghost" type="button" data-copy="agentText">Copy</button></div>
+    <pre id="agentText">${escapeXml(AGENT_INSTRUCTIONS)}</pre>
   </section>
 </main>
 
@@ -537,7 +545,7 @@ footer p{margin:0 0 8px}
       dlg.querySelectorAll('[data-pane]').forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== tab.getAttribute('data-tab'); });
     });
   });
-  dlg.querySelectorAll('[data-copy]').forEach(function (btn) {
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
     btn.addEventListener('click', function () { copy($(btn.getAttribute('data-copy')).textContent, 'Snippet copied'); });
   });
   $('shareBtn').addEventListener('click', function () {
